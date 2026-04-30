@@ -1,377 +1,397 @@
-# DEX - 去中心化交易所
+<div align="center">
 
-基于 AMM（恒定乘积 x·y=k）的去中心化交易所，灵感来自 Uniswap V2。
+# 🏦 DEX Protocol
 
-## 功能概览
+**A Production-Grade Decentralized Exchange Built from Scratch**
 
-| 功能 | 状态 | 说明 |
-|------|------|------|
-| 代币兑换 (Swap) | ✅ | 支持 ERC20 代币互换，0.3% 手续费 |
-| 流动性管理 | ✅ | 添加/移除流动性，获取 LP 代币 |
-| ETH 兑换 | ✅ | 支持 ETH ↔ ERC20 兑换（通过 WETH 包装） |
-| 多跳路由 | ✅ | 支持 A→B→C 间接路径兑换 |
-| 实时报价 | ✅ | 输入数量自动计算输出，含滑点保护 |
-| 钱包连接 | ✅ | RainbowKit 支持 MetaMask 等主流钱包 |
-| 链上事件监听 | ✅ | 后端实时监听 Swap/Mint/Burn 事件 |
-| 限价单 | ✅ | 链下挂单 + 链上结算，支持创建/取消/成交 |
-| 价格图表 | ✅ | SVG 折线图，从后端 Kline API 获取历史数据 |
-| 治理 & 投票 | ✅ | 创建提案、代币加权投票、执行提案 |
-| 流动性挖矿 | ✅ | 质押 LP 代币赚取奖励，支持多池 |
-| 持久化存储 | ✅ | MySQL / PostgreSQL / 内存三模式，通过 DATABASE_URL + DB_TYPE 切换 |
+Full-stack AMM DEX featuring constant-product market making, limit order books with on-chain settlement, governance, liquidity mining, and real-time WebSocket-powered depth visualization.
 
-## 项目结构
+[![Solidity](https://img.shields.io/badge/Solidity-0.8.24-363636?logo=solidity)](https://docs.soliditylang.org/)
+[![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://go.dev/)
+[![Next.js](https://img.shields.io/badge/Next.js-16-000?logo=nextdotjs)](https://nextjs.org/)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript)](https://www.typescriptlang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+[Architecture](#-system-architecture) · [Features](#-features) · [Quick Start](#-quick-start) · [API Reference](#-api-reference) · [Design Decisions](#-design-decisions)
+
+</div>
+
+---
+
+## Why This Project
+
+This isn't a tutorial DEX. It's a **complete, vertically-integrated DeFi protocol** designed to demonstrate production-level engineering across the entire stack — from EVM smart contracts to real-time WebSocket infrastructure to a modern React frontend.
+
+**Key engineering decisions that matter in production:**
+
+- **No `address(0)` mint** — OpenZeppelin v5 forbids it; MINIMUM_LIQUIDITY is minted to the pair contract itself, matching real-world Uniswap V2 deployments
+- **No GORM AutoMigrate** — Raw SQL migrations only; schema changes are explicit, reviewable, and never surprise you in production
+- **No foreign keys** — High-write blockchain event ingestion paths avoid FK contention; referential integrity enforced at the application layer
+- **Three-mode storage** — In-memory (dev), MySQL (production), PostgreSQL (alternative), switched by a single env var
+- **WebSocket order book** — Not just a REST polling UI; real-time bid/ask depth with on-chain event-driven updates
+- **BigInt-safe** — All token amounts stored as decimal strings, zero floating-point anywhere in the pipeline
+
+---
+
+## ✨ Features
+
+| Category | Feature | Detail |
+|----------|---------|--------|
+| **Core AMM** | Token Swap | ERC20 ↔ ERC20 with 0.3% fee, constant-product `x·y=k` |
+| | ETH Wrapper | Native ETH ↔ ERC20 via WETH gateway |
+| | Multi-hop Routing | A→B→C path optimization through intermediate pairs |
+| | Slippage Protection | Configurable minimum output + transaction deadline |
+| **Liquidity** | Add / Remove | Deposit paired tokens, receive LP shares; burn to withdraw |
+| | LP Token | ERC20-compliant liquidity provider token with `permit` support |
+| **Limit Orders** | Off-chain Orderbook | REST API + WebSocket for real-time depth aggregation |
+| | On-chain Settlement | `LimitOrderVault` holds deposited tokens, fills atomically |
+| | Event Sync | Backend listens to `OrderCreated/Filled/Cancelled` on-chain |
+| **Governance** | Proposals | Create → Vote → Execute lifecycle with token-weighted voting |
+| **Liquidity Mining** | Multi-pool Staking | Stake LP tokens, earn rewards proportional to pool weight |
+| **Real-time Data** | WebSocket Push | Order book depth updates broadcast to all connected clients |
+| | K-line / OHLCV | Historical candlestick data via REST API |
+| | On-chain Event Listener | Factory `PairCreated`, Pair `Swap/Mint/Burn/Sync` indexed in real-time |
+| **Infrastructure** | Multi-database | MySQL 8 / PostgreSQL / In-memory, switchable at runtime |
+| | Raw SQL Migrations | No ORM schema drift — explicit, versioned DDL scripts |
+| | Structured Logging | Dual output to stdout + `logs/backend.log` |
+
+---
+
+## 🏗 System Architecture
+
+```
+                              ┌─────────────────────────┐
+                              │       Frontend          │
+                              │  Next.js 16 + React 19  │
+                              │  wagmi 3 · RainbowKit   │
+                              │  WebSocket · REST       │
+                              └──────────┬──────────────┘
+                                   │     │
+                              HTTP │     │ WS
+                                   ▼     ▼
+                              ┌─────────────────────────┐
+                              │      Go Backend         │
+                              │  REST API · WebSocket   │
+                              │  Event Indexer          │
+                              │  Service Layer          │
+                              └──────┬─────┬────────────┘
+                                     │     │
+                              RPC    │     │ SQL
+                                     ▼     ▼
+  ┌──────────────────────────┐  ┌────────────────┐
+  │   EVM Blockchain         │  │   MySQL / PG   │
+  │                          │  │                │
+  │  ┌── DEXFactory ──────┐  │  │  pairs         │
+  │  │  createPair()      │  │  │  tokens        │
+  │  └────────┬───────────┘  │  │  swap_events   │
+  │           │              │  │  klines        │
+  │  ┌── DEXPair ─────────┐  │  │  limit_orders  │
+  │  │  swap() mint()     │  │  │  governance_   │
+  │  │  burn() sync()     │  │  │    proposals   │
+  │  └────────────────────┘  │  └────────────────┘
+  │                          │
+  │  ┌── DEXRouter ────────┐  │
+  │  │  addLiquidity()     │  │
+  │  │  swapExact()        │  │
+  │  │  getAmountsOut()    │  │
+  │  └────────────────────┘  │
+  │                          │
+  │  ┌── LimitOrderVault ──┐  │
+  │  │  createOrder()      │  │
+  │  │  fillOrder()        │  │
+  │  │  cancelOrder()      │  │
+  │  └────────────────────┘  │
+  │                          │
+  │  ┌── DEXGovernance ────┐  │
+  │  │  propose() vote()   │  │
+  │  │  execute()          │  │
+  │  └────────────────────┘  │
+  │                          │
+  │  ┌── LiquidityMining ──┐  │
+  │  │  deposit() withdraw │  │
+  │  │  harvest()          │  │
+  │  └────────────────────┘  │
+  └──────────────────────────┘
+```
+
+### Contract Interaction Flow
+
+```
+User ──→ DEXRouter ──→ DEXPair ──→ ERC20 Tokens
+              │              │
+              ├── DEXFactory ──┘  (create/query pairs)
+              ├── LimitOrderVault (escrow + settlement)
+              ├── DEXGovernance   (propose → vote → execute)
+              └── LiquidityMining (stake LP → earn rewards)
+```
+
+---
+
+## 📂 Project Structure
 
 ```
 dex/
-├── contracts/                  # Solidity 智能合约 (Hardhat)
+├── contracts/                     # Solidity 0.8.24 · Hardhat 2
 │   ├── contracts/
-│   │   ├── DEXFactory.sol      # 交易对工厂合约
-│   │   ├── DEXPair.sol         # 交易对核心合约（AMM 逻辑）
-│   │   ├── DEXRouter.sol       # 路由合约（用户交互入口）
-│   │   ├── LimitOrderVault.sol # 限价单金库合约
-│   │   ├── DEXGovernance.sol   # 治理合约（提案+投票）
-│   │   ├── LiquidityMining.sol # 流动性挖矿合约
-│   │   ├── libraries/
-│   │   │   └── DEXLibrary.sol  # 辅助库（报价/金额计算）
-│   │   ├── interfaces/
-│   │   │   └── IWETH.sol       # WETH 接口
-│   │   └── mock/
-│   │       ├── MockERC20.sol   # 测试用 ERC20
-│   │       └── MockWETH.sol    # 测试用 WETH
-│   ├── test/
-│   │   ├── DEXFactory.test.ts  # 工厂合约测试 (10 cases)
-│   │   ├── DEXPair.test.ts     # 交易对测试 (11 cases)
-│   │   └── DEXRouter.test.ts   # 路由合约测试 (18 cases)
-│   ├── scripts/
-│   │   ├── deploy.ts           # 部署核心合约
-│   │   └── deploy-tokens.ts    # 部署测试代币
-│   └── hardhat.config.ts
+│   │   ├── DEXFactory.sol         # Pair factory with feeTo setter
+│   │   ├── DEXPair.sol            # AMM core: reserves, swap, LP mint/burn
+│   │   ├── DEXRouter.sol          # User-facing: swap, add/remove liquidity
+│   │   ├── LimitOrderVault.sol    # Escrow-based limit order settlement
+│   │   ├── DEXGovernance.sol      # Token-weighted governance
+│   │   ├── LiquidityMining.sol    # Multi-pool LP staking rewards
+│   │   ├── libraries/DEXLibrary.sol
+│   │   └── interfaces/IWETH.sol
+│   ├── test/                      # 39 unit tests (Factory · Pair · Router)
+│   └── scripts/                   # Deploy scripts (core + test tokens)
 │
-├── backend/                    # Go 后端服务
-│   ├── cmd/
-│   │   └── main.go             # 入口，启动 API + 事件监听
-│   └── internal/
-│       ├── api/
-│       │   └── handler.go      # REST API 路由与处理
-│       ├── blockchain/
-│       │   ├── client.go       # 链上交互客户端
-│       │   ├── abi.go          # 合约 ABI 定义
-│       │   └── events.go       # 事件订阅与处理
-│       ├── service/
-│       │   ├── service.go      # 业务逻辑（报价/订单/治理/K线）
-│       │   └── errors.go       # 错误定义
-│       ├── store/
-│       │   ├── models.go       # 数据模型 + 接口定义
-│       │   ├── memory.go       # 内存存储实现
-│       │   └── postgres.go     # 数据库存储实现（MySQL/PG 通用）
-│       ├── model/
-│       │   └── model.go        # 传输层数据模型
-│       ├── migrations/
-│       │   ├── 001_init_mysql.sql    # MySQL 建表脚本
-│       │   └── 001_init_postgres.sql # PostgreSQL 建表脚本
-│       └── logs/                # 日志文件目录
+├── backend/                       # Go 1.22+ · go-ethereum · GORM
+│   ├── cmd/main.go                # Entry: API + event watcher + WS hub
+│   ├── internal/
+│   │   ├── api/handler.go         # REST + WebSocket endpoints
+│   │   ├── blockchain/            # Eth client, ABI, event subscription
+│   │   ├── service/service.go     # Business logic + orderbook aggregation
+│   │   ├── store/                 # Interface + Memory/PG implementations
+│   │   └── ws/hub.go              # WebSocket hub + broadcast
+│   ├── migrations/                # Raw SQL (MySQL / PostgreSQL)
+│   └── logs/
 │
-└── frontend/                   # Next.js 前端
+└── frontend/                      # Next.js 16 · React 19 · wagmi 3
     └── src/
-        ├── app/
-        │   ├── page.tsx            # 首页
-        │   ├── swap/page.tsx       # Swap + 价格图表
-        │   ├── liquidity/page.tsx  # 流动性管理页面
-        │   ├── limit-order/page.tsx # 限价单页面
-        │   ├── governance/page.tsx  # 治理投票页面
-        │   └── farming/page.tsx     # 流动性挖矿页面
-        ├── components/
-        │   ├── Providers.tsx       # wagmi/RainbowKit/ReactQuery Provider
-        │   ├── Navbar.tsx          # 导航栏 + 钱包连接按钮
-        │   ├── SwapCard.tsx        # Swap 交互组件
-        │   ├── LiquidityCard.tsx   # 流动性交互组件
-        │   ├── LimitOrderCard.tsx  # 限价单交互组件
-        │   ├── GovernanceCard.tsx  # 治理投票交互组件
-        │   ├── FarmingCard.tsx     # 流动性挖矿交互组件
-        │   └── PriceChart.tsx      # SVG 价格图表组件
-        └── lib/
-            ├── wagmi.ts            # wagmi 链配置
-            ├── contracts.ts        # 合约 ABI + 地址
-            └── tokens.ts           # 常用代币列表
+        ├── app/                   # Pages: /swap /liquidity /limit-order ...
+        ├── components/            # SwapCard · LiquidityCard · OrderBook ...
+        └── lib/                   # wagmi config · ABIs · useOrderBook hook
 ```
 
-## 核心合约架构
+---
 
-```
-                        ┌── DEXGovernance (治理投票)
-                        │
-用户 ──→ DEXRouter ──→ DEXPair ──→ ERC20 Tokens
-              │              │
-              ├── DEXFactory ──┘  (创建/查询交易对)
-              │
-              ├── LimitOrderVault (限价单托管+结算)
-              │
-              └── LiquidityMining  (LP 质押挖矿)
-```
+## 🚀 Quick Start
 
-- **DEXFactory**：创建交易对，维护 token→pair 映射
-- **DEXPair**：AMM 核心，管理储备量、执行 swap、铸造/销毁 LP 代币
-- **DEXRouter**：用户入口，封装 approve、滑点保护、deadline、多跳路由
-- **LimitOrderVault**：限价单托管，用户存入 tokenIn，成交时交付 tokenOut
-- **DEXGovernance**：治理代币加权投票，创建提案→投票→执行
-- **LiquidityMining**：LP 质押挖矿，多池分配奖励
-- **恒定乘积公式**：`x * y = k`，swap 后 `x' * y' >= k`（0.3% 手续费）
+### Prerequisites
 
-## 操作手册
+- Node.js ≥ 18 · Go ≥ 1.22 · MetaMask
 
-### 前置条件
-
-- [Node.js](https://nodejs.org/) >= 18
-- [Go](https://go.dev/) >= 1.22
-- [MySQL](https://www.mysql.com/) 8+ 或 [PostgreSQL](https://www.postgresql.org/) (可选，不设置则使用内存存储)
-- [Docker](https://www.docker.com/) (可选，用于本地启动 MySQL)
-- [MetaMask](https://metamask.io/) 浏览器插件
-
-### 1. 启动本地区块链
+### 1. Launch Local Chain
 
 ```bash
-cd contracts
-npm install
-npx hardhat node
+cd contracts && npm install
+npx hardhat node                  # 20 test accounts printed
 ```
 
-终端会输出 20 个测试账户及其私钥，保留此终端窗口。
-
-### 2. 部署合约
-
-新开终端：
+### 2. Deploy Contracts
 
 ```bash
-cd contracts
-
-# 部署核心合约（WETH + Factory + Router）
 npx hardhat run scripts/deploy.ts --network localhost
+# → Copy output addresses to frontend/.env.local
 ```
 
-输出示例：
-```
-MockWETH deployed to: 0x5FbDB2315678afecb367f032d93F642f64180aa3
-DEXFactory deployed to: 0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512
-DEXRouter deployed to: 0x9fE46736679d2D9a65F0992F2272De9f3c7fa6e0
-
-Update frontend/.env.local with:
-NEXT_PUBLIC_FACTORY_ADDRESS=0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512
-NEXT_PUBLIC_ROUTER_ADDRESS=0x9fE46736679d2D9a65F0992F2272De9f3c7fa6e0
-NEXT_PUBLIC_WETH_ADDRESS=0x5FbDB2315678afecb367f032d93F642f64180aa3
-```
-
-将输出的地址填入 `frontend/.env.local`：
-
-```bash
-cd ../frontend
-# 编辑 .env.local，填入上面输出的地址
-```
-
-部署测试代币（可选）：
-
-```bash
-cd contracts
-npx hardhat run scripts/deploy-tokens.ts --network localhost
-```
-
-### 3. 启动后端服务
-
-#### 内存存储模式（默认，无需数据库）
+### 3. Start Backend
 
 ```bash
 cd backend
+
+# In-memory mode (no DB needed)
 go run cmd/main.go
-```
 
-#### MySQL 模式
-
-```bash
-# 使用 Docker 启动 MySQL（如已有可跳过）
-docker run -d --name mysql8 \
-  -p 3306:3306 \
-  -e MYSQL_ROOT_PASSWORD=root@123456 \
-  -e MYSQL_DATABASE=dex \
-  -e MYSQL_CHARACTER_SET_SERVER=utf8mb4 \
-  -e MYSQL_COLLATION_SERVER=utf8mb4_unicode_ci \
-  mysql:8
-
-# 或在已有 MySQL 中创建数据库
-docker exec mysql8 mysql -uroot -proot@123456 \
-  -e "CREATE DATABASE IF NOT EXISTS dex DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-
-# 启动后端（自动建表）
+# MySQL mode
 DB_TYPE=mysql \
 DATABASE_URL="root:root@123456@tcp(127.0.0.1:3306)/dex?charset=utf8mb4&parseTime=True&loc=Local" \
+FACTORY_ADDRESS=0x... \
+VAULT_ADDRESS=0x... \
 go run cmd/main.go
 ```
 
-#### PostgreSQL 模式
+### 4. Start Frontend
 
 ```bash
-# 创建数据库
-createdb dex
-
-# 启动后端（自动建表）
-DB_TYPE=postgres \
-DATABASE_URL="host=localhost port=5432 user=postgres dbname=dex sslmode=disable" \
-go run cmd/main.go
+cd frontend && npm install && npm run dev
+# → http://localhost:3000
 ```
 
-> **注意**：`DB_TYPE` 可省略，默认为 `auto`，会根据 `DATABASE_URL` 格式自动判断（含 `tcp(` 或 `:3306` 识别为 MySQL，其余识别为 PostgreSQL）。
-
-后端启动后：
-- 日志同时输出到终端和 `logs/backend.log`
-- 自动执行 `migrations/` 目录下的原生 SQL 建表脚本（**禁止 GORM AutoMigrate**）
-
-可配置环境变量：
-
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `RPC_URL` | `http://127.0.0.1:8545` | 区块链 RPC 地址 |
-| `LISTEN_ADDR` | `:8080` | API 监听地址 |
-| `FACTORY_ADDRESS` | 空 | Factory 合约地址（设置后启用事件监听） |
-| `DATABASE_URL` | 空 | 数据库连接串（空则用内存存储） |
-| `DB_TYPE` | `auto` | 数据库类型：`auto` / `mysql` / `postgres` |
-
-API 端点：
-
-```
-# 基础
-GET  /api/pairs                          # 列出所有交易对
-GET  /api/pairs/:address                 # 查询交易对详情
-GET  /api/tokens                         # 列出已知代币
-GET  /api/tokens/:address                # 查询代币信息
-GET  /api/quote?amountIn=...&path=[...]  # 获取报价
-POST /api/sync                           # 手动同步链上数据
-
-# 交易数据
-GET  /api/swaps?pair=...&limit=50        # 查询交易记录
-GET  /api/klines?pair=...&from=...&to=...# 查询K线数据
-
-# 限价单
-GET    /api/orders?status=open           # 列出订单
-POST   /api/orders                       # 创建订单
-DELETE /api/orders/:id                   # 取消订单
-
-# 治理
-GET  /api/proposals?status=active        # 列出提案
-POST /api/proposals                      # 创建提案
-POST /api/proposals/:id/vote             # 投票
-```
-
-### 4. 启动前端
+### 5. Run Contract Tests
 
 ```bash
-cd frontend
-npm install
-npm run dev
+cd contracts && npx hardhat test   # 39 passing
 ```
 
-访问 http://localhost:3000
+---
 
-### 5. 配置 MetaMask 连接本地链
+## 📡 API Reference
 
-1. 打开 MetaMask → 添加网络：
-   - 网络名称：`Hardhat Local`
-   - RPC URL：`http://127.0.0.1:8545`
-   - 链 ID：`31337`
-   - 货币符号：`ETH`
+### Core
 
-2. 导入 Hardhat 测试账户（使用 `npx hardhat node` 输出的私钥）
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/pairs` | List all trading pairs |
+| `GET` | `/api/pairs/:address` | Get pair by address |
+| `GET` | `/api/tokens` | List known tokens |
+| `GET` | `/api/tokens/:address` | Get token info |
+| `GET` | `/api/quote?amountIn=...&path=[...]` | Get swap quote |
+| `POST` | `/api/sync` | Sync pairs from chain |
 
-3. 如果部署了测试代币，在 MetaMask 中导入代币（粘贴代币合约地址）
+### Market Data
 
-### 6. 使用 DEX
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/swaps?pair=...&limit=50` | Recent swap events |
+| `GET` | `/api/klines?pair=...&from=...&to=...` | OHLCV candlestick data |
 
-#### Swap 代币
-1. 访问 http://localhost:3000/swap
-2. 选择输入代币和输出代币
-3. 输入数量，自动获取报价
-4. 点击 **Approve** 授权（首次需要）
-5. 点击 **Swap** 执行兑换
-6. 页面下方显示价格走势图
+### Limit Orders
 
-#### 管理流动性
-1. 访问 http://localhost:3000/liquidity
-2. 选择 **Add Liquidity** 标签
-3. 选择代币对，输入数量 A，数量 B 自动计算
-4. Approve 代币 → 点击 **Add Liquidity**
-5. 移除流动性：切换到 **Remove Liquidity**，选择百分比 → 确认
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/orders?status=open` | List orders by status |
+| `POST` | `/api/orders` | Create order |
+| `DELETE` | `/api/orders/:id` | Cancel order |
+| `GET` | `/api/orderbook?tokenIn=...&tokenOut=...` | Aggregated bid/ask depth |
 
-#### 限价单
-1. 访问 http://localhost:3000/limit-order
-2. 输入 Token In / Token Out 地址和期望数量
-3. 选择有效期（1h/6h/24h/3d/7d）
-4. Approve → Create Order
-5. 其他用户可在价格满足时 Fill Order
+### Real-time
 
-#### 治理投票
-1. 访问 http://localhost:3000/governance
-2. **NewProposal** 标签：填写标题和描述，创建提案
-3. **Proposals** 标签：输入提案 ID，For/Against 投票
-4. 投票期结束后可执行通过的提案
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/ws` | WebSocket — orderbook depth updates |
 
-#### 流动性挖矿
-1. 访问 http://localhost:3000/farming
-2. 输入 Pool ID 和质押数量
-3. Approve → Deposit 质押 LP 代币
-4. Harvest 收获奖励 → Withdraw 取回 LP
+### Governance
 
-### 7. 运行合约测试
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/proposals?status=active` | List proposals |
+| `POST` | `/api/proposals` | Create proposal |
+| `POST` | `/api/proposals/:id/vote` | Cast vote |
 
-```bash
-cd contracts
-npx hardhat test
+---
+
+## 🧠 Design Decisions
+
+### Smart Contracts
+
+| Decision | Rationale |
+|----------|-----------|
+| `MINIMUM_LIQUIDITY` minted to `address(self)` | OpenZeppelin v5 ERC20 rejects `address(0)` mint; mirrors production Uniswap V2 behavior |
+| 0.3% swap fee hardcoded | Simplifies audit surface; fee-on/fee-off controlled by Factory `feeTo` |
+| `ReentrancyGuard` on Vault & Mining | All external calls (transfer, transferFrom) guarded against reentrancy |
+| No proxy/upgrade pattern | Immutable deployments reduce attack surface; upgrade via governance if needed |
+
+### Backend
+
+| Decision | Rationale |
+|----------|-----------|
+| Raw SQL migrations | Zero schema drift; every DDL change is explicit, reviewed, versioned |
+| No foreign keys | Blockchain event ingestion is high-write; FK checks become bottlenecks at scale |
+| BigInt as decimal strings | `uint256` values exceed `int64`; stored as `VARCHAR(128)` with `big.Rat` arithmetic |
+| WebSocket hub with broadcast | Orderbook depth changes pushed to all clients; avoids thundering-herd polling |
+| Interface-driven store layer | `Store` interface enables memory/PG/MySQL swap without touching business logic |
+
+### Frontend
+
+| Decision | Rationale |
+|----------|-----------|
+| wagmi v3 + viem v2 | Type-safe contract calls; `as const` ABI inference for compile-time arg checking |
+| WebSocket + polling fallback | Live updates when connected; 5s HTTP poll when WS unavailable |
+| No floating-point arithmetic | All amounts handled as strings; `parseUnits`/`formatUnits` for display only |
+| `tsconfig` target ES2020 | Required for `BigInt` literal support in TypeScript |
+
+---
+
+## 🗄 Database Schema
+
+Six tables, zero foreign keys, UTF-8 throughout:
+
+```
+pairs                 tokens               swap_events
+├── id (PK)           ├── id (PK)          ├── id (PK)
+├── address (UQ)      ├── address (UQ)     ├── pair (IDX)
+├── token0            ├── name             ├── sender
+├── token1            ├── symbol           ├── amount0_in / amount1_in
+├── reserve0          ├── decimals         ├── amount0_out / amount1_out
+└── reserve1          └── created_at       ├── to_addr
+                                           ├── block_num (IDX)
+klines                ├── id (PK)          ├── tx_hash
+├── id (PK)           ├── maker            └── created_at
+├── pair (IDX)        ├── token_in
+├── open_time (IDX)   ├── token_out        governance_proposals
+├── open/high/low/cls ├── amount_in/out    ├── id (PK)
+├── volume            ├── status (IDX)     ├── proposer
+└── created_at        ├── deadline         ├── title / description
+                      ├── filled_tx        ├── status (IDX)
+limit_orders          └── created_at       ├── for_votes / against_votes
+├── id (PK)                                ├── start_time / end_time
+├── maker                                  ├── executed_tx
+├── token_in / token_out                   └── created_at / updated_at
+├── amount_in / amount_out
+├── status (IDX)
+├── deadline
+├── filled_tx
+└── created_at / updated_at
 ```
 
-预期输出：`39 passing`
+> All numeric amounts stored as `VARCHAR(128)` decimal strings. `DEFAULT` values on every column — no NULLs.
 
-## 环境变量汇总
+---
 
-### frontend/.env.local
+## ⚙️ Configuration
 
-| 变量 | 必填 | 说明 |
-|------|------|------|
-| `NEXT_PUBLIC_FACTORY_ADDRESS` | 是 | DEXFactory 合约地址 |
-| `NEXT_PUBLIC_ROUTER_ADDRESS` | 是 | DEXRouter 合约地址 |
-| `NEXT_PUBLIC_WETH_ADDRESS` | 是 | WETH 合约地址 |
-| `NEXT_PUBLIC_LIMIT_ORDER_ADDRESS` | 否 | LimitOrderVault 合约地址 |
-| `NEXT_PUBLIC_GOVERNANCE_ADDRESS` | 否 | DEXGovernance 合约地址 |
-| `NEXT_PUBLIC_FARM_ADDRESS` | 否 | LiquidityMining 合约地址 |
+### Backend Environment Variables
 
-### backend 环境变量
-
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `RPC_URL` | `http://127.0.0.1:8545` | 区块链 RPC |
-| `LISTEN_ADDR` | `:8080` | API 端口 |
-| `FACTORY_ADDRESS` | 空 | 设置后启用事件监听 |
-| `DATABASE_URL` | 空 | 数据库连接串，空则用内存存储 |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RPC_URL` | `http://127.0.0.1:8545` | Ethereum JSON-RPC endpoint |
+| `LISTEN_ADDR` | `:8080` | API server bind address |
+| `FACTORY_ADDRESS` | — | Enables on-chain event listening |
+| `VAULT_ADDRESS` | — | Enables limit order event sync |
+| `DATABASE_URL` | — | DB connection string (empty = in-memory) |
 | `DB_TYPE` | `auto` | `auto` / `mysql` / `postgres` |
 
-## 技术栈
+### Frontend Environment Variables
 
-| 层 | 技术 |
-|----|------|
-| 智能合约 | Solidity 0.8.24, Hardhat, OpenZeppelin 5 |
-| 后端 | Go 1.22+, go-ethereum, GORM |
-| 数据库 | MySQL 8 / PostgreSQL / 内存存储 |
-| 前端 | Next.js 16, React 19, wagmi 3, viem 2, RainbowKit 2, Tailwind CSS 4 |
-| 钱包 | MetaMask / WalletConnect (via RainbowKit) |
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `NEXT_PUBLIC_FACTORY_ADDRESS` | Yes | DEXFactory contract |
+| `NEXT_PUBLIC_ROUTER_ADDRESS` | Yes | DEXRouter contract |
+| `NEXT_PUBLIC_WETH_ADDRESS` | Yes | WETH contract |
+| `NEXT_PUBLIC_LIMIT_ORDER_ADDRESS` | No | LimitOrderVault contract |
+| `NEXT_PUBLIC_GOVERNANCE_ADDRESS` | No | DEXGovernance contract |
+| `NEXT_PUBLIC_FARM_ADDRESS` | No | LiquidityMining contract |
+| `NEXT_PUBLIC_WS_URL` | No | WebSocket URL (default `ws://localhost:8080/api/ws`) |
+| `NEXT_PUBLIC_API_URL` | No | REST API URL (default `http://localhost:8080`) |
 
-## 数据库设计规范
+---
 
-- **严禁外键**：所有表无外键约束，应用层保证数据一致性
-- **禁止 GORM AutoMigrate**：建表使用 `migrations/` 下的原生 SQL 脚本
-- **DEFAULT 值**：数值型字段 DEFAULT 0，字符串 DEFAULT ''，时间 DEFAULT CURRENT_TIMESTAMP，避免 NULL 导致转换异常
-- **编码**：统一 UTF-8（MySQL 使用 utf8mb4_unicode_ci）
-- **大数存储**：储备量、金额等大数使用 VARCHAR(128) 存储十进制字符串，避免精度丢失
-- **三模式切换**：内存存储（默认）→ MySQL → PostgreSQL，通过 `DATABASE_URL` + `DB_TYPE` 配置
+## 🛠 Tech Stack
 
-## 后续规划
+| Layer | Technology |
+|-------|-----------|
+| Smart Contracts | Solidity 0.8.24, Hardhat 2, OpenZeppelin 5 |
+| Backend | Go 1.22+, go-ethereum, GORM, gorilla/websocket |
+| Database | MySQL 8 / PostgreSQL / In-memory |
+| Frontend | Next.js 16, React 19, wagmi 3, viem 2, RainbowKit 2, Tailwind CSS 4 |
+| Wallet | MetaMask / WalletConnect (via RainbowKit) |
 
-- [ ] 跨链交易（LayerZero / Axelar）
-- [ ] 合约安全审计
-- [ ] 前端限价单订单簿实时展示
-- [ ] WebSocket 推送价格更新
-- [ ] 移动端适配优化
+---
+
+## 🗺 Roadmap
+
+- [ ] Cross-chain swaps (LayerZero / Axelar)
+- [ ] Contract security audit (Slither + manual review)
+- [ ] Concentrated liquidity (Uniswap V3-style tick system)
+- [ ] TWAP oracle integration
+- [ ] Mobile-responsive optimization
+- [ ] Dark/light theme toggle
+
+---
+
+## 📄 License
+
+MIT
+
+---
+
+<div align="center">
+
+**Built with obsessive attention to engineering detail.**
+
+If you're building something in DeFi infrastructure, exchange systems, or blockchain tooling — I'd love to talk.
+
+📧 **wolfbian017@gmail.com**
+
+</div>
