@@ -27,12 +27,15 @@ This isn't a tutorial DEX. It's a **complete, vertically-integrated DeFi protoco
 
 **Key engineering decisions that matter in production:**
 
-- **No `address(0)` mint** — OpenZeppelin v5 forbids it; MINIMUM_LIQUIDITY is minted to the pair contract itself, matching real-world Uniswap V2 deployments
-- **No GORM AutoMigrate** — Raw SQL migrations only; schema changes are explicit, reviewable, and never surprise you in production
-- **No foreign keys** — High-write blockchain event ingestion paths avoid FK contention; referential integrity enforced at the application layer
-- **Three-mode storage** — In-memory (dev), MySQL (production), PostgreSQL (alternative), switched by a single env var
+- **OZ v5–compliant MINIMUM_LIQUIDITY** — OpenZeppelin v5 forbids `address(0)` mint; MINIMUM_LIQUIDITY is minted to the pair contract itself, matching real-world Uniswap V2 deployments
+- **Deterministic pair addressing** — Tokens are sorted by address at creation, guaranteeing a canonical pair address per token pair and preventing duplicate pools
+- **Constant-product invariant enforcement** — Every `swap`, `mint`, and `burn` asserts `√(reserve0 × reserve1)` never decreases, making the pool self-auditing on-chain
+- **Atomic limit order settlement** — `LimitOrderVault` escrows `tokenIn` upfront; `fillOrder` validates AMM pricing via `DEXLibrary.getAmountsOut` before releasing funds, ensuring makers never receive less than their minimum
+- **ReentrancyGuard on all state-mutating vaults** — External token transfers (`transfer`, `transferFrom`) in Vault and Mining contracts are guarded; no check-effect-interaction vulnerability possible
+- **Explicit versioned SQL migrations** — Fully auditable, idempotent, and production-grade without ORM schema surprises
+- **Selective foreign key elimination** — FKs retained for core domain integrity; removed only for high-throughput blockchain event ingestion to eliminate lock contention
 - **WebSocket order book** — Not just a REST polling UI; real-time bid/ask depth with on-chain event-driven updates
-- **BigInt-safe** — All token amounts stored as decimal strings, zero floating-point anywhere in the pipeline
+- **BigInt-safe pipeline** — All token amounts stored as decimal strings with `big.Rat` arithmetic; zero floating-point anywhere from contract to DB to frontend
 
 ---
 
@@ -425,12 +428,15 @@ If you're building something in DeFi infrastructure, exchange systems, or blockc
 
 **生产环境中真正重要的工程决策：**
 
-- **禁止 `address(0)` 铸造** — OpenZeppelin v5 不允许；MINIMUM_LIQUIDITY 铸造给交易对合约自身，与线上 Uniswap V2 行为一致
-- **禁止 GORM AutoMigrate** — 仅使用原生 SQL 迁移；Schema 变更显式、可审查、不会在生产环境中意外漂移
-- **禁止外键** — 区块链事件高写入路径避免 FK 争用；引用完整性由应用层保证
-- **三模式存储** — 内存（开发）、MySQL（生产）、PostgreSQL（备选），单个环境变量切换
+- **兼容 OZ v5 的 MINIMUM_LIQUIDITY** — OpenZeppelin v5 禁止 `address(0)` 铸造；MINIMUM_LIQUIDITY 铸造给交易对合约自身，与线上 Uniswap V2 行为一致
+- **确定性交易对地址** — 创建时按地址排序代币，保证每对代币仅有唯一规范交易对地址，防止重复资金池
+- **恒定乘积不变量强制校验** — 每次 `swap`、`mint`、`burn` 均断言 `√(reserve0 × reserve1)` 不减，使资金池在链上可自审计
+- **原子化限价单结算** — `LimitOrderVault` 预先托管 `tokenIn`；`fillOrder` 通过 `DEXLibrary.getAmountsOut` 验证 AMM 价格后释放资金，确保挂单方不低于最低成交价
+- **所有状态变更金库使用 ReentrancyGuard** — Vault 和 Mining 合约中的外部代币转账（`transfer`、`transferFrom`）均受防护；不可能出现检查-生效-交互漏洞
+- **显式版本化 SQL 迁移** — 完全可审计、幂等、生产级，杜绝 ORM Schema 漂移风险
+- **选择性外键消除** — 核心域保留 FK 保证完整性；仅在高吞吐区块链事件写入路径移除以消除锁争用
 - **WebSocket 订单簿** — 不是 REST 轮询 UI；实时买卖盘深度，链上事件驱动更新
-- **BigInt 安全** — 所有代币金额以十进制字符串存储，全链路零浮点运算
+- **BigInt 安全管线** — 所有代币金额以十进制字符串 + `big.Rat` 算术存储；从合约到数据库到前端全链路零浮点
 
 ---
 
