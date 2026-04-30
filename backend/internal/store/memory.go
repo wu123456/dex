@@ -142,6 +142,25 @@ func (s *MemoryStore) ListOrders(status string) []*LimitOrder {
 	return result
 }
 
+func (s *MemoryStore) ListOrdersByPair(tokenIn, tokenOut, status string) []*LimitOrder {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var result []*LimitOrder
+	for _, o := range s.orders {
+		if status != "" && o.Status != status {
+			continue
+		}
+		if tokenIn != "" && o.TokenIn != tokenIn {
+			continue
+		}
+		if tokenOut != "" && o.TokenOut != tokenOut {
+			continue
+		}
+		result = append(result, o)
+	}
+	return result
+}
+
 func (s *MemoryStore) UpdateOrderStatus(id uint, status, filledTx string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

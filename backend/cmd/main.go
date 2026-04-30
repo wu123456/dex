@@ -9,10 +9,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/wolf/dex-backend/internal/api"
 	"github.com/wolf/dex-backend/internal/blockchain"
 	"github.com/wolf/dex-backend/internal/service"
 	"github.com/wolf/dex-backend/internal/store"
+	"github.com/wolf/dex-backend/internal/ws"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
@@ -70,10 +72,22 @@ func main() {
 		if err := eventHandler.WatchFactory(ctx); err != nil {
 			log.Printf("warning: could not start event watcher: %v", err)
 		}
+
+		vaultAddrStr := getEnv("VAULT_ADDRESS", "")
+		if vaultAddrStr != "" {
+			eventHandler.SetOrderStore(s)
+			eventHandler.SetVaultAddr(common.HexToAddress(vaultAddrStr))
+			if err := eventHandler.WatchVault(ctx); err != nil {
+				log.Printf("warning: could not start vault event watcher: %v", err)
+			}
+		}
 	}
 
-	svc := service.New(client, s)
-	handler := api.NewHandler(svc)
+	hub := ws.NewHub()
+	go hub.Run()
+
+	svc := service.NewWithHub(client, s, hub)
+	handler := api.NewHandler(svc, hub)
 
 	log.Printf("DEX backend starting on %s", listenAddr)
 	if err := handler.Serve(listenAddr); err != nil {

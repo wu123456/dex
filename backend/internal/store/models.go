@@ -117,6 +117,7 @@ type OrderStore interface {
 	SaveOrder(order *LimitOrder) error
 	GetOrder(id uint) (*LimitOrder, bool)
 	ListOrders(status string) []*LimitOrder
+	ListOrdersByPair(tokenIn, tokenOut, status string) []*LimitOrder
 	UpdateOrderStatus(id uint, status, filledTx string) error
 }
 

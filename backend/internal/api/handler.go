@@ -5,19 +5,27 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/gorilla/websocket"
 	"github.com/wolf/dex-backend/internal/service"
 	"github.com/wolf/dex-backend/internal/store"
+	"github.com/wolf/dex-backend/internal/ws"
 )
 
 type Handler struct {
-	svc *service.Service
-	mux *http.ServeMux
+	svc      *service.Service
+	mux      *http.ServeMux
+	hub      *ws.Hub
+	upgrader websocket.Upgrader
 }
 
-func NewHandler(svc *service.Service) *Handler {
+func NewHandler(svc *service.Service, hub *ws.Hub) *Handler {
 	h := &Handler{
 		svc: svc,
 		mux: http.NewServeMux(),
+		hub: hub,
+		upgrader: websocket.Upgrader{
+			CheckOrigin: func(r *http.Request) bool { return true },
+		},
 	}
 	h.registerRoutes()
 	return h
@@ -36,10 +44,15 @@ func (h *Handler) registerRoutes() {
 	h.mux.HandleFunc("GET /api/orders", h.handleGetOrders)
 	h.mux.HandleFunc("POST /api/orders", h.handleCreateOrder)
 	h.mux.HandleFunc("DELETE /api/orders/{id}", h.handleCancelOrder)
+	h.mux.HandleFunc("GET /api/orderbook", h.handleGetOrderBook)
 
 	h.mux.HandleFunc("GET /api/proposals", h.handleGetProposals)
 	h.mux.HandleFunc("POST /api/proposals", h.handleCreateProposal)
 	h.mux.HandleFunc("POST /api/proposals/{id}/vote", h.handleVote)
+
+	if h.hub != nil {
+		h.mux.HandleFunc("GET /api/ws", h.handleWebSocket)
+	}
 }
 
 func (h *Handler) Serve(addr string) error {
@@ -165,6 +178,28 @@ func (h *Handler) handleCancelOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
+}
+
+func (h *Handler) handleGetOrderBook(w http.ResponseWriter, r *http.Request) {
+	tokenIn := r.URL.Query().Get("tokenIn")
+	tokenOut := r.URL.Query().Get("tokenOut")
+	if tokenIn == "" || tokenOut == "" {
+		writeError(w, http.StatusBadRequest, "tokenIn and tokenOut are required")
+		return
+	}
+	orderbook := h.svc.GetOrderBook(tokenIn, tokenOut)
+	writeJSON(w, http.StatusOK, orderbook)
+}
+
+func (h *Handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	conn, err := h.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	client := ws.NewClient(h.hub, conn)
+	h.hub.Register(client)
+	go client.WritePump()
+	go client.ReadPump()
 }
 
 func (h *Handler) handleGetProposals(w http.ResponseWriter, r *http.Request) {

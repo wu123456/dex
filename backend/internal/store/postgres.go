@@ -115,6 +115,22 @@ func (s *PGStore) ListOrders(status string) []*LimitOrder {
 	return orders
 }
 
+func (s *PGStore) ListOrdersByPair(tokenIn, tokenOut, status string) []*LimitOrder {
+	var orders []*LimitOrder
+	q := s.db.Order("created_at desc")
+	if tokenIn != "" {
+		q = q.Where("token_in = ?", tokenIn)
+	}
+	if tokenOut != "" {
+		q = q.Where("token_out = ?", tokenOut)
+	}
+	if status != "" {
+		q = q.Where("status = ?", status)
+	}
+	q.Find(&orders)
+	return orders
+}
+
 func (s *PGStore) UpdateOrderStatus(id uint, status, filledTx string) error {
 	return s.db.Model(&LimitOrder{}).Where("id = ?", id).
 		Updates(map[string]interface{}{"status": status, "filled_tx": filledTx}).Error

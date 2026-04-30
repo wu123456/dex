@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.4.0] - 2026-04-30
+
+### 限价单订单簿实时展示
+
+#### 新增
+
+- **WebSocket 实时推送**：后端新增 `ws.Hub`，客户端连接 `GET /api/ws` 后可实时接收订单簿更新
+- **订单簿 API**：`GET /api/orderbook?tokenIn=...&tokenOut=...` 返回按价格聚合的 bid/ask 深度数据
+- **链上限价单事件监听**：后端监听 `LimitOrderVault` 的 `OrderCreated`/`OrderFilled`/`OrderCancelled` 事件，自动同步链上订单到本地数据库
+- **前端 OrderBook 组件**：可视化 bid/ask 深度图，支持 token 对选择，WebSocket 实时更新 + 5s 轮询兜底
+- **前端 WebSocket hook**：`useOrderBook` 和 `useFetchOrderBook` 两个 hook 分别支持 WS 实时和 HTTP 轮询
+
+#### 新增文件
+
+| 文件 | 说明 |
+|------|------|
+| `backend/internal/ws/hub.go` | WebSocket Hub / Client / 广播逻辑 |
+| `frontend/src/lib/useOrderBook.ts` | 前端 WebSocket + HTTP 订单簿 hook |
+| `frontend/src/components/OrderBook.tsx` | 前端订单簿可视化组件 |
+
+#### 修改文件
+
+| 文件 | 变更 |
+|------|------|
+| `backend/internal/api/handler.go` | 新增 `handleGetOrderBook`、`handleWebSocket`，Handler 注入 `ws.Hub` |
+| `backend/internal/service/service.go` | 新增 `GetOrderBook`、`FillOrder`，创建/取消订单时广播订单簿更新 |
+| `backend/internal/store/models.go` | `OrderStore` 接口新增 `ListOrdersByPair` |
+| `backend/internal/store/memory.go` | 实现 `ListOrdersByPair` |
+| `backend/internal/store/postgres.go` | 实现 `ListOrdersByPair` |
+| `backend/internal/blockchain/events.go` | 新增 `WatchVault` 及链上限价单事件处理 |
+| `backend/cmd/main.go` | 启动 `ws.Hub`，注入 Hub 到 Service 和 Handler，配置 Vault 事件监听 |
+| `frontend/src/app/limit-order/page.tsx` | 集成 OrderBook 组件，双栏布局 |
+
+#### 环境变量
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `VAULT_ADDRESS` | LimitOrderVault 合约地址 | 空（不监听） |
+| `NEXT_PUBLIC_WS_URL` | 前端 WebSocket 地址 | `ws://localhost:8080/api/ws` |
+| `NEXT_PUBLIC_API_URL` | 前端 REST API 地址 | `http://localhost:8080` |
+
+---
+
 ## [0.3.0] - 2026-04-30
 
 ### 多数据库支持 + 运维改造

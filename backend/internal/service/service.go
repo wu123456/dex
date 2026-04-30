@@ -3,21 +3,32 @@ package service
 import (
 	"context"
 	"math/big"
+	"sort"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/wolf/dex-backend/internal/blockchain"
 	"github.com/wolf/dex-backend/internal/store"
+	"github.com/wolf/dex-backend/internal/ws"
 )
 
 type Service struct {
 	client *blockchain.Client
 	store  store.Store
+	hub    *ws.Hub
 }
 
 func New(client *blockchain.Client, s store.Store) *Service {
 	return &Service{
 		client: client,
 		store:  s,
+	}
+}
+
+func NewWithHub(client *blockchain.Client, s store.Store, hub *ws.Hub) *Service {
+	return &Service{
+		client: client,
+		store:  s,
+		hub:    hub,
 	}
 }
 
@@ -87,7 +98,11 @@ func (s *Service) GetKlines(ctx context.Context, pair string, from, to int64) []
 
 func (s *Service) CreateOrder(order *store.LimitOrder) error {
 	order.Status = "open"
-	return s.store.SaveOrder(order)
+	if err := s.store.SaveOrder(order); err != nil {
+		return err
+	}
+	s.broadcastOrderBook(order.TokenIn, order.TokenOut)
+	return nil
 }
 
 func (s *Service) GetOrders(status string) []*store.LimitOrder {
@@ -103,7 +118,117 @@ func (s *Service) GetOrder(id uint) (*store.LimitOrder, error) {
 }
 
 func (s *Service) CancelOrder(id uint) error {
-	return s.store.UpdateOrderStatus(id, "cancelled", "")
+	order, ok := s.store.GetOrder(id)
+	if !ok {
+		return ErrNotFound
+	}
+	if err := s.store.UpdateOrderStatus(id, "cancelled", ""); err != nil {
+		return err
+	}
+	s.broadcastOrderBook(order.TokenIn, order.TokenOut)
+	return nil
+}
+
+func (s *Service) FillOrder(id uint, txHash string) error {
+	order, ok := s.store.GetOrder(id)
+	if !ok {
+		return ErrNotFound
+	}
+	if err := s.store.UpdateOrderStatus(id, "filled", txHash); err != nil {
+		return err
+	}
+	s.broadcastOrderBook(order.TokenIn, order.TokenOut)
+	return nil
+}
+
+func (s *Service) GetOrderBook(tokenIn, tokenOut string) *ws.OrderBookUpdate {
+	orders := s.store.ListOrdersByPair(tokenIn, tokenOut, "open")
+	bidMap := make(map[string]*ws.PriceLevel)
+	askMap := make(map[string]*ws.PriceLevel)
+
+	reverseOrders := s.store.ListOrdersByPair(tokenOut, tokenIn, "open")
+
+	for _, o := range orders {
+		amountIn, _ := new(big.Int).SetString(o.AmountIn, 10)
+		amountOut, _ := new(big.Int).SetString(o.AmountOut, 10)
+		if amountIn == nil || amountOut == nil || amountOut.Sign() == 0 {
+			continue
+		}
+		priceRat := new(big.Rat).SetFrac(amountOut, amountIn)
+		priceStr := priceRat.FloatString(8)
+		if _, ok := bidMap[priceStr]; !ok {
+			bidMap[priceStr] = &ws.PriceLevel{Price: priceStr, Amount: "0"}
+		}
+		existing, _ := new(big.Rat).SetString(bidMap[priceStr].Amount)
+		bidMap[priceStr].Amount = new(big.Rat).Add(
+			existing,
+			new(big.Rat).SetFrac(amountIn, big.NewInt(1)),
+		).FloatString(6)
+		bidMap[priceStr].Count++
+	}
+
+	for _, o := range reverseOrders {
+		amountIn, _ := new(big.Int).SetString(o.AmountIn, 10)
+		amountOut, _ := new(big.Int).SetString(o.AmountOut, 10)
+		if amountIn == nil || amountOut == nil || amountIn.Sign() == 0 {
+			continue
+		}
+		priceRat := new(big.Rat).SetFrac(amountIn, amountOut)
+		priceStr := priceRat.FloatString(8)
+		if _, ok := askMap[priceStr]; !ok {
+			askMap[priceStr] = &ws.PriceLevel{Price: priceStr, Amount: "0"}
+		}
+		existing, _ := new(big.Rat).SetString(askMap[priceStr].Amount)
+		askMap[priceStr].Amount = new(big.Rat).Add(
+			existing,
+			new(big.Rat).SetFrac(amountOut, big.NewInt(1)),
+		).FloatString(6)
+		askMap[priceStr].Count++
+	}
+
+	bids := make([]*ws.PriceLevel, 0, len(bidMap))
+	for _, v := range bidMap {
+		bids = append(bids, v)
+	}
+	sort.Slice(bids, func(i, j int) bool {
+		bi, _ := new(big.Rat).SetString(bids[i].Price)
+		bj, _ := new(big.Rat).SetString(bids[j].Price)
+		return bi.Cmp(bj) > 0
+	})
+
+	asks := make([]*ws.PriceLevel, 0, len(askMap))
+	for _, v := range askMap {
+		asks = append(asks, v)
+	}
+	sort.Slice(asks, func(i, j int) bool {
+		ai, _ := new(big.Rat).SetString(asks[i].Price)
+		aj, _ := new(big.Rat).SetString(asks[j].Price)
+		return ai.Cmp(aj) < 0
+	})
+
+	bidSlice := make([]ws.PriceLevel, len(bids))
+	for i, b := range bids {
+		bidSlice[i] = *b
+	}
+	askSlice := make([]ws.PriceLevel, len(asks))
+	for i, a := range asks {
+		askSlice[i] = *a
+	}
+
+	return &ws.OrderBookUpdate{
+		TokenIn:  tokenIn,
+		TokenOut: tokenOut,
+		Bids:     bidSlice,
+		Asks:     askSlice,
+	}
+}
+
+func (s *Service) broadcastOrderBook(tokenIn, tokenOut string) {
+	if s.hub == nil {
+		return
+	}
+	update := s.GetOrderBook(tokenIn, tokenOut)
+	s.hub.BroadcastOrderBook(update)
 }
 
 func (s *Service) CreateProposal(proposal *store.GovernanceProposal) error {
