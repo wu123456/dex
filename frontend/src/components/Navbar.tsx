@@ -10,6 +10,9 @@ export function Navbar() {
   const links = [
     { href: "/swap", label: "Swap" },
     { href: "/liquidity", label: "Liquidity" },
+    { href: "/limit-order", label: "Limit" },
+    { href: "/governance", label: "Govern" },
+    { href: "/farming", label: "Farm" },
   ];
 
   return (
@@ -23,7 +26,7 @@ export function Navbar() {
             <Link
               key={link.href}
               href={link.href}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                 pathname === link.href
                   ? "bg-indigo-600 text-white"
                   : "text-zinc-400 hover:text-white hover:bg-zinc-800"

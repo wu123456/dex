@@ -3,8 +3,10 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/wolf/dex-backend/internal/service"
+	"github.com/wolf/dex-backend/internal/store"
 )
 
 type Handler struct {
@@ -27,7 +29,17 @@ func (h *Handler) registerRoutes() {
 	h.mux.HandleFunc("GET /api/tokens", h.handleGetTokens)
 	h.mux.HandleFunc("GET /api/tokens/{address}", h.handleGetToken)
 	h.mux.HandleFunc("GET /api/quote", h.handleGetQuote)
+	h.mux.HandleFunc("GET /api/swaps", h.handleGetSwaps)
+	h.mux.HandleFunc("GET /api/klines", h.handleGetKlines)
 	h.mux.HandleFunc("POST /api/sync", h.handleSync)
+
+	h.mux.HandleFunc("GET /api/orders", h.handleGetOrders)
+	h.mux.HandleFunc("POST /api/orders", h.handleCreateOrder)
+	h.mux.HandleFunc("DELETE /api/orders/{id}", h.handleCancelOrder)
+
+	h.mux.HandleFunc("GET /api/proposals", h.handleGetProposals)
+	h.mux.HandleFunc("POST /api/proposals", h.handleCreateProposal)
+	h.mux.HandleFunc("POST /api/proposals/{id}/vote", h.handleVote)
 }
 
 func (h *Handler) Serve(addr string) error {
@@ -37,7 +49,7 @@ func (h *Handler) Serve(addr string) error {
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
@@ -48,11 +60,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 }
 
 func (h *Handler) handleGetPairs(w http.ResponseWriter, r *http.Request) {
-	pairs, err := h.svc.GetPairs(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
+	pairs := h.svc.GetPairs(r.Context())
 	writeJSON(w, http.StatusOK, pairs)
 }
 
@@ -67,11 +75,7 @@ func (h *Handler) handleGetPair(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleGetTokens(w http.ResponseWriter, r *http.Request) {
-	tokens, err := h.svc.GetTokens(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
+	tokens := h.svc.GetTokens(r.Context())
 	writeJSON(w, http.StatusOK, tokens)
 }
 
@@ -88,18 +92,15 @@ func (h *Handler) handleGetToken(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleGetQuote(w http.ResponseWriter, r *http.Request) {
 	amountIn := r.URL.Query().Get("amountIn")
 	pathStr := r.URL.Query().Get("path")
-
 	if amountIn == "" || pathStr == "" {
 		writeError(w, http.StatusBadRequest, "amountIn and path are required")
 		return
 	}
-
 	var path []string
 	if err := json.Unmarshal([]byte(pathStr), &path); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid path format, expected JSON array")
+		writeError(w, http.StatusBadRequest, "invalid path format")
 		return
 	}
-
 	quote, err := h.svc.GetQuote(r.Context(), amountIn, path)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -108,12 +109,102 @@ func (h *Handler) handleGetQuote(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, quote)
 }
 
+func (h *Handler) handleGetSwaps(w http.ResponseWriter, r *http.Request) {
+	pair := r.URL.Query().Get("pair")
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	swaps := h.svc.GetSwaps(r.Context(), pair, limit)
+	writeJSON(w, http.StatusOK, swaps)
+}
+
+func (h *Handler) handleGetKlines(w http.ResponseWriter, r *http.Request) {
+	pair := r.URL.Query().Get("pair")
+	from, _ := strconv.ParseInt(r.URL.Query().Get("from"), 10, 64)
+	to, _ := strconv.ParseInt(r.URL.Query().Get("to"), 10, 64)
+	if to == 0 {
+		to = 0x7FFFFFFFFFFFFFFF
+	}
+	klines := h.svc.GetKlines(r.Context(), pair, from, to)
+	writeJSON(w, http.StatusOK, klines)
+}
+
 func (h *Handler) handleSync(w http.ResponseWriter, r *http.Request) {
 	if err := h.svc.SyncPairs(r.Context()); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) handleGetOrders(w http.ResponseWriter, r *http.Request) {
+	status := r.URL.Query().Get("status")
+	orders := h.svc.GetOrders(status)
+	writeJSON(w, http.StatusOK, orders)
+}
+
+func (h *Handler) handleCreateOrder(w http.ResponseWriter, r *http.Request) {
+	var order store.LimitOrder
+	if err := json.NewDecoder(r.Body).Decode(&order); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.svc.CreateOrder(&order); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, order)
+}
+
+func (h *Handler) handleCancelOrder(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseUint(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid order id")
+		return
+	}
+	if err := h.svc.CancelOrder(uint(id)); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
+}
+
+func (h *Handler) handleGetProposals(w http.ResponseWriter, r *http.Request) {
+	status := r.URL.Query().Get("status")
+	proposals := h.svc.GetProposals(status)
+	writeJSON(w, http.StatusOK, proposals)
+}
+
+func (h *Handler) handleCreateProposal(w http.ResponseWriter, r *http.Request) {
+	var proposal store.GovernanceProposal
+	if err := json.NewDecoder(r.Body).Decode(&proposal); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.svc.CreateProposal(&proposal); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, proposal)
+}
+
+func (h *Handler) handleVote(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseUint(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid proposal id")
+		return
+	}
+	var body struct {
+		Support bool   `json:"support"`
+		Weight  string `json:"weight"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.svc.Vote(uint(id), body.Support, body.Weight); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "voted"})
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {

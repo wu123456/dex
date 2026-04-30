@@ -8,3 +8,4 @@ dist/
 *.log
 *.exe
 frontend/.next/
+backend/logs/

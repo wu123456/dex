@@ -11,12 +11,12 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/wolf/dex-backend/internal/model"
+	"github.com/wolf/dex-backend/internal/store"
 )
 
 type EventHandler struct {
 	client    *Client
-	store     pairStore
+	store     eventPairStore
 	pairTopic common.Hash
 	mintTopic common.Hash
 	burnTopic common.Hash
@@ -24,12 +24,12 @@ type EventHandler struct {
 	syncTopic common.Hash
 }
 
-type pairStore interface {
-	SavePair(address string, pair *model.Pair)
-	GetPair(address string) (*model.Pair, bool)
+type eventPairStore interface {
+	SavePair(address string, pair *store.Pair)
+	GetPair(address string) (*store.Pair, bool)
 }
 
-func NewEventHandler(client *Client, store pairStore) *EventHandler {
+func NewEventHandler(client *Client, store eventPairStore) *EventHandler {
 	return &EventHandler{
 		client:    client,
 		store:     store,
@@ -118,12 +118,12 @@ func (h *EventHandler) handlePairCreated(vLog types.Log) {
 		reserve1 = big.NewInt(0)
 	}
 
-	pair := &model.Pair{
+	pair := &store.Pair{
 		Address:  pairAddr.Hex(),
 		Token0:   token0.Hex(),
 		Token1:   token1.Hex(),
-		Reserve0: reserve0,
-		Reserve1: reserve1,
+		Reserve0: store.BigToIntString(reserve0),
+		Reserve1: store.BigToIntString(reserve1),
 	}
 
 	h.store.SavePair(pairAddr.Hex(), pair)
@@ -165,12 +165,12 @@ func (h *EventHandler) handleSync(pairAddr common.Address, vLog types.Log) {
 		return
 	}
 
-	pair := &model.Pair{
+	pair := &store.Pair{
 		Address:  pairAddr.Hex(),
 		Token0:   token0.Hex(),
 		Token1:   token1.Hex(),
-		Reserve0: reserve0,
-		Reserve1: reserve1,
+		Reserve0: store.BigToIntString(reserve0),
+		Reserve1: store.BigToIntString(reserve1),
 	}
 
 	h.store.SavePair(pairAddr.Hex(), pair)
@@ -186,14 +186,14 @@ func (h *EventHandler) refreshReserves(pairAddr common.Address) {
 	existing, ok := h.store.GetPair(pairAddr.Hex())
 	if !ok {
 		token0, token1, _ := h.client.GetToken0Token1(context.Background(), pairAddr)
-		existing = &model.Pair{
+		existing = &store.Pair{
 			Address: pairAddr.Hex(),
 			Token0:  token0.Hex(),
 			Token1:  token1.Hex(),
 		}
 	}
 
-	existing.Reserve0 = reserve0
-	existing.Reserve1 = reserve1
+	existing.Reserve0 = store.BigToIntString(reserve0)
+	existing.Reserve1 = store.BigToIntString(reserve1)
 	h.store.SavePair(pairAddr.Hex(), existing)
 }

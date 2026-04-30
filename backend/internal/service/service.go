@@ -6,27 +6,26 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/wolf/dex-backend/internal/blockchain"
-	"github.com/wolf/dex-backend/internal/model"
 	"github.com/wolf/dex-backend/internal/store"
 )
 
 type Service struct {
 	client *blockchain.Client
-	store  *store.MemoryStore
+	store  store.Store
 }
 
-func New(client *blockchain.Client, store *store.MemoryStore) *Service {
+func New(client *blockchain.Client, s store.Store) *Service {
 	return &Service{
 		client: client,
-		store:  store,
+		store:  s,
 	}
 }
 
-func (s *Service) GetPairs(ctx context.Context) ([]*model.Pair, error) {
-	return s.store.ListPairs(), nil
+func (s *Service) GetPairs(ctx context.Context) []*store.Pair {
+	return s.store.ListPairs()
 }
 
-func (s *Service) GetPair(ctx context.Context, address string) (*model.Pair, error) {
+func (s *Service) GetPair(ctx context.Context, address string) (*store.Pair, error) {
 	pair, ok := s.store.GetPair(address)
 	if !ok {
 		pairAddr := common.HexToAddress(address)
@@ -35,11 +34,11 @@ func (s *Service) GetPair(ctx context.Context, address string) (*model.Pair, err
 	return pair, nil
 }
 
-func (s *Service) GetTokens(ctx context.Context) ([]*model.TokenInfo, error) {
-	return s.store.ListTokens(), nil
+func (s *Service) GetTokens(ctx context.Context) []*store.Token {
+	return s.store.ListTokens()
 }
 
-func (s *Service) GetToken(ctx context.Context, address string) (*model.TokenInfo, error) {
+func (s *Service) GetToken(ctx context.Context, address string) (*store.Token, error) {
 	token, ok := s.store.GetToken(address)
 	if !ok {
 		tokenAddr := common.HexToAddress(address)
@@ -48,7 +47,7 @@ func (s *Service) GetToken(ctx context.Context, address string) (*model.TokenInf
 	return token, nil
 }
 
-func (s *Service) GetQuote(ctx context.Context, amountIn string, path []string) (*model.SwapQuote, error) {
+func (s *Service) GetQuote(ctx context.Context, amountIn string, path []string) (*SwapQuoteResult, error) {
 	amount, ok := new(big.Int).SetString(amountIn, 10)
 	if !ok {
 		return nil, ErrInvalidAmount
@@ -68,11 +67,79 @@ func (s *Service) GetQuote(ctx context.Context, amountIn string, path []string) 
 		amounts = append(amounts, out)
 	}
 
-	return &model.SwapQuote{
+	return &SwapQuoteResult{
 		AmountIn:  amounts[0].String(),
 		AmountOut: amounts[len(amounts)-1].String(),
 		Path:      path,
 	}, nil
+}
+
+func (s *Service) GetSwaps(ctx context.Context, pair string, limit int) []*store.SwapEvent {
+	if limit <= 0 {
+		limit = 50
+	}
+	return s.store.ListSwaps(pair, limit)
+}
+
+func (s *Service) GetKlines(ctx context.Context, pair string, from, to int64) []*store.Kline {
+	return s.store.ListKlines(pair, from, to)
+}
+
+func (s *Service) CreateOrder(order *store.LimitOrder) error {
+	order.Status = "open"
+	return s.store.SaveOrder(order)
+}
+
+func (s *Service) GetOrders(status string) []*store.LimitOrder {
+	return s.store.ListOrders(status)
+}
+
+func (s *Service) GetOrder(id uint) (*store.LimitOrder, error) {
+	order, ok := s.store.GetOrder(id)
+	if !ok {
+		return nil, ErrNotFound
+	}
+	return order, nil
+}
+
+func (s *Service) CancelOrder(id uint) error {
+	return s.store.UpdateOrderStatus(id, "cancelled", "")
+}
+
+func (s *Service) CreateProposal(proposal *store.GovernanceProposal) error {
+	proposal.Status = "pending"
+	proposal.ForVotes = "0"
+	proposal.AgainstVotes = "0"
+	return s.store.SaveProposal(proposal)
+}
+
+func (s *Service) GetProposals(status string) []*store.GovernanceProposal {
+	return s.store.ListProposals(status)
+}
+
+func (s *Service) GetProposal(id uint) (*store.GovernanceProposal, error) {
+	proposal, ok := s.store.GetProposal(id)
+	if !ok {
+		return nil, ErrNotFound
+	}
+	return proposal, nil
+}
+
+func (s *Service) Vote(proposalID uint, support bool, weight string) error {
+	proposal, ok := s.store.GetProposal(proposalID)
+	if !ok {
+		return ErrNotFound
+	}
+	if support {
+		v, _ := new(big.Int).SetString(proposal.ForVotes, 10)
+		w, _ := new(big.Int).SetString(weight, 10)
+		proposal.ForVotes = new(big.Int).Add(v, w).String()
+	} else {
+		v, _ := new(big.Int).SetString(proposal.AgainstVotes, 10)
+		w, _ := new(big.Int).SetString(weight, 10)
+		proposal.AgainstVotes = new(big.Int).Add(v, w).String()
+	}
+	return s.store.UpdateProposal(proposal)
 }
 
 func (s *Service) SyncPairs(ctx context.Context) error {
@@ -80,7 +147,6 @@ func (s *Service) SyncPairs(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-
 	for i := uint64(0); i < length; i++ {
 		pairAddr := common.BigToAddress(new(big.Int).SetUint64(i))
 		_, ok := s.store.GetPair(pairAddr.Hex())
@@ -91,46 +157,40 @@ func (s *Service) SyncPairs(ctx context.Context) error {
 			}
 		}
 	}
-
 	return nil
 }
 
-func (s *Service) fetchPairInfo(ctx context.Context, pairAddr common.Address) (*model.Pair, error) {
+func (s *Service) fetchPairInfo(ctx context.Context, pairAddr common.Address) (*store.Pair, error) {
 	token0, token1, err := s.client.GetToken0Token1(ctx, pairAddr)
 	if err != nil {
 		return nil, err
 	}
-
 	reserve0, reserve1, err := s.client.GetReserves(ctx, pairAddr)
 	if err != nil {
 		return nil, err
 	}
-
-	pair := &model.Pair{
+	pair := &store.Pair{
 		Address:  pairAddr.Hex(),
 		Token0:   token0.Hex(),
 		Token1:   token1.Hex(),
-		Reserve0: reserve0,
-		Reserve1: reserve1,
+		Reserve0: store.BigToIntString(reserve0),
+		Reserve1: store.BigToIntString(reserve1),
 	}
-
 	s.store.SavePair(pairAddr.Hex(), pair)
 	return pair, nil
 }
 
-func (s *Service) fetchTokenInfo(ctx context.Context, tokenAddr common.Address) (*model.TokenInfo, error) {
+func (s *Service) fetchTokenInfo(ctx context.Context, tokenAddr common.Address) (*store.Token, error) {
 	name, symbol, decimals, err := s.client.GetTokenInfo(ctx, tokenAddr)
 	if err != nil {
 		return nil, err
 	}
-
-	token := &model.TokenInfo{
+	token := &store.Token{
 		Address:  tokenAddr.Hex(),
 		Name:     name,
 		Symbol:   symbol,
 		Decimals: decimals,
 	}
-
 	s.store.SaveToken(tokenAddr.Hex(), token)
 	return token, nil
 }
@@ -140,12 +200,10 @@ func (s *Service) getSortedReserves(ctx context.Context, pairAddr common.Address
 	if err != nil {
 		return nil, nil, err
 	}
-
 	token0, _, err := s.client.GetToken0Token1(ctx, pairAddr)
 	if err != nil {
 		return nil, nil, err
 	}
-
 	if common.HexToAddress(tokenA) == token0 {
 		return reserve0, reserve1, nil
 	}
@@ -160,4 +218,10 @@ func getAmountOut(amountIn, reserveIn, reserveOut *big.Int) *big.Int {
 		amountInWithFee,
 	)
 	return new(big.Int).Div(numerator, denominator)
+}
+
+type SwapQuoteResult struct {
+	AmountIn  string   `json:"amountIn"`
+	AmountOut string   `json:"amountOut"`
+	Path      []string `json:"path"`
 }
