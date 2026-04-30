@@ -33,7 +33,7 @@ This isn't a tutorial DEX. It's a **complete, vertically-integrated DeFi protoco
 - **Atomic limit order settlement** — `LimitOrderVault` escrows `tokenIn` upfront; `fillOrder` validates AMM pricing via `DEXLibrary.getAmountsOut` before releasing funds, ensuring makers never receive less than their minimum
 - **ReentrancyGuard on all state-mutating vaults** — External token transfers (`transfer`, `transferFrom`) in Vault and Mining contracts are guarded; no check-effect-interaction vulnerability possible
 - **Explicit versioned SQL migrations** — Fully auditable, idempotent, and production-grade without ORM schema surprises
-- **Selective foreign key elimination** — FKs retained for core domain integrity; removed only for high-throughput blockchain event ingestion to eliminate lock contention
+- **Zero-FK data layer** — Referential integrity enforced at the application layer; eliminates cross-table lock contention under high-throughput blockchain event ingestion and simplifies horizontal scaling
 - **WebSocket order book** — Not just a REST polling UI; real-time bid/ask depth with on-chain event-driven updates
 - **BigInt-safe pipeline** — All token amounts stored as decimal strings with `big.Rat` arithmetic; zero floating-point anywhere from contract to DB to frontend
 
@@ -434,7 +434,7 @@ If you're building something in DeFi infrastructure, exchange systems, or blockc
 - **原子化限价单结算** — `LimitOrderVault` 预先托管 `tokenIn`；`fillOrder` 通过 `DEXLibrary.getAmountsOut` 验证 AMM 价格后释放资金，确保挂单方不低于最低成交价
 - **所有状态变更金库使用 ReentrancyGuard** — Vault 和 Mining 合约中的外部代币转账（`transfer`、`transferFrom`）均受防护；不可能出现检查-生效-交互漏洞
 - **显式版本化 SQL 迁移** — 完全可审计、幂等、生产级，杜绝 ORM Schema 漂移风险
-- **选择性外键消除** — 核心域保留 FK 保证完整性；仅在高吞吐区块链事件写入路径移除以消除锁争用
+- **零外键数据层** — 引用完整性由应用层保证；消除高吞吐链上事件写入下的跨表锁争用，简化水平扩展
 - **WebSocket 订单簿** — 不是 REST 轮询 UI；实时买卖盘深度，链上事件驱动更新
 - **BigInt 安全管线** — 所有代币金额以十进制字符串 + `big.Rat` 算术存储；从合约到数据库到前端全链路零浮点
 
