@@ -12,7 +12,10 @@ describe("DEX Router", () => {
   let owner: HardhatEthersSigner;
   let other: HardhatEthersSigner;
 
-  const DEADLINE = Math.floor(Date.now() / 1000) + 3600;
+  async function getDeadline() {
+    const block = await ethers.provider.getBlock("latest");
+    return BigInt(block!.timestamp + 3600);
+  }
 
   beforeEach(async () => {
     [owner, other] = await ethers.getSigners();
@@ -52,7 +55,7 @@ describe("DEX Router", () => {
       0,
       0,
       owner.address,
-      DEADLINE
+      await getDeadline()
     );
   }
 
@@ -124,7 +127,7 @@ describe("DEX Router", () => {
 
       await expect(
         router.removeLiquidity(
-          tokenA.target, tokenB.target, liquidity, 0, 0, owner.address, DEADLINE
+          tokenA.target, tokenB.target, liquidity, 0, 0, owner.address, await getDeadline()
         )
       ).to.emit(router, "LiquidityRemoved");
 
@@ -142,7 +145,7 @@ describe("DEX Router", () => {
       await expect(
         router.removeLiquidity(
           tokenA.target, tokenB.target, liquidity,
-          ethers.parseEther("999999"), 0, owner.address, DEADLINE
+          ethers.parseEther("999999"), 0, owner.address, await getDeadline()
         )
       ).to.be.revertedWith("DEXRouter: INSUFFICIENT_A_AMOUNT");
     });
@@ -161,7 +164,7 @@ describe("DEX Router", () => {
 
       await expect(
         router.swapExactTokensForTokens(
-          amountIn, 0, [tokenA.target, tokenB.target], owner.address, DEADLINE
+          amountIn, 0, [tokenA.target, tokenB.target], owner.address, await getDeadline()
         )
       ).to.emit(router, "SwapExactTokensForTokens");
 
@@ -175,7 +178,7 @@ describe("DEX Router", () => {
       const balanceBBefore = await tokenB.balanceOf(owner.address);
 
       await router.swapTokensForExactTokens(
-        amountOut, ethers.parseEther("100"), [tokenA.target, tokenB.target], owner.address, DEADLINE
+        amountOut, ethers.parseEther("100"), [tokenA.target, tokenB.target], owner.address, await getDeadline()
       );
 
       expect(await tokenB.balanceOf(owner.address) - balanceBBefore).to.equal(amountOut);
@@ -187,7 +190,7 @@ describe("DEX Router", () => {
 
       await expect(
         router.swapExactTokensForTokens(
-          amountIn, ethers.parseEther("999"), [tokenA.target, tokenB.target], owner.address, DEADLINE
+          amountIn, ethers.parseEther("999"), [tokenA.target, tokenB.target], owner.address, await getDeadline()
         )
       ).to.be.revertedWith("DEXRouter: INSUFFICIENT_OUTPUT_AMOUNT");
     });
@@ -198,7 +201,7 @@ describe("DEX Router", () => {
 
       await expect(
         router.swapTokensForExactTokens(
-          amountOut, ethers.parseEther("0.001"), [tokenA.target, tokenB.target], owner.address, DEADLINE
+          amountOut, ethers.parseEther("0.001"), [tokenA.target, tokenB.target], owner.address, await getDeadline()
         )
       ).to.be.revertedWith("DEXRouter: EXCESSIVE_INPUT_AMOUNT");
     });
@@ -216,7 +219,7 @@ describe("DEX Router", () => {
       const balanceCBefore = await tokenC.balanceOf(owner.address);
 
       await router.swapExactTokensForTokens(
-        amountIn, 0, [tokenA.target, tokenB.target, tokenC.target], owner.address, DEADLINE
+        amountIn, 0, [tokenA.target, tokenB.target, tokenC.target], owner.address, await getDeadline()
       );
 
       expect(await tokenC.balanceOf(owner.address)).to.be.gt(balanceCBefore);
@@ -227,7 +230,7 @@ describe("DEX Router", () => {
     beforeEach(async () => {
       await tokenA.approve(router.target, ethers.parseEther("100"));
       await router.addLiquidityETH(
-        tokenA.target, ethers.parseEther("100"), 0, 0, owner.address, DEADLINE,
+        tokenA.target, ethers.parseEther("100"), 0, 0, owner.address, await getDeadline(),
         { value: ethers.parseEther("10") }
       );
     });
@@ -238,7 +241,7 @@ describe("DEX Router", () => {
 
       await expect(
         router.swapExactETHForTokens(
-          0, [weth.target, tokenA.target], owner.address, DEADLINE,
+          0, [weth.target, tokenA.target], owner.address, await getDeadline(),
           { value: ethAmount }
         )
       ).to.emit(router, "SwapExactTokensForTokens");
@@ -253,7 +256,7 @@ describe("DEX Router", () => {
       const ethBefore = await ethers.provider.getBalance(owner.address);
 
       await router.swapExactTokensForETH(
-        amountIn, 0, [tokenA.target, weth.target], owner.address, DEADLINE
+        amountIn, 0, [tokenA.target, weth.target], owner.address, await getDeadline()
       );
 
       expect(await ethers.provider.getBalance(owner.address)).to.be.gt(ethBefore);
@@ -269,7 +272,7 @@ describe("DEX Router", () => {
       const ethBefore = await ethers.provider.getBalance(owner.address);
 
       await router.removeLiquidityETH(
-        tokenA.target, liquidity, 0, 0, owner.address, DEADLINE
+        tokenA.target, liquidity, 0, 0, owner.address, await getDeadline()
       );
 
       expect(await ethers.provider.getBalance(owner.address)).to.be.gt(ethBefore);
