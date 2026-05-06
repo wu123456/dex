@@ -32,6 +32,10 @@
 | `backend/internal/blockchain/events.go` | 新增 `WatchVault` 及链上限价单事件处理 |
 | `backend/cmd/main.go` | 启动 `ws.Hub`，注入 Hub 到 Service 和 Handler，配置 Vault 事件监听 |
 | `frontend/src/app/limit-order/page.tsx` | 集成 OrderBook 组件，双栏布局 |
+| `contracts/test/LimitOrderVault.test.ts` | 限价单合约单元测试（21 cases） |
+| `contracts/test/DEXGovernance.test.ts` | 治理合约单元测试（24 cases） |
+| `contracts/test/LiquidityMining.test.ts` | 流动性挖矿合约单元测试（22 cases） |
+| `contracts/test/DEXRouter.test.ts` | 修复 DEADLINE 过期问题，改为动态获取 |
 
 #### 环境变量
 
@@ -108,7 +112,7 @@ host=127.0.0.1 port=5432 user=postgres dbname=dex sslmode=disable
 
 ### 初始版本
 
-- 智能合约：DEXFactory、DEXPair、DEXRouter、DEXLibrary（39 个测试通过）
+- 智能合约：DEXFactory、DEXPair、DEXRouter、DEXLibrary（39 个测试通过）→ 加上 Vault/Governance/Mining 共 106 个测试通过
 - Go 后端：REST API + 链上事件监听 + 内存缓存
 - Next.js 前端：Swap + 流动性管理 + 钱包连接（RainbowKit + wagmi）
 - 部署脚本：核心合约部署 + 测试代币部署

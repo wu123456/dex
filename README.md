@@ -147,7 +147,7 @@ dex/
 │   │   ├── LiquidityMining.sol    # Multi-pool LP staking rewards
 │   │   ├── libraries/DEXLibrary.sol
 │   │   └── interfaces/IWETH.sol
-│   ├── test/                      # 39 unit tests (Factory · Pair · Router)
+│   ├── test/                      # 106 unit tests (Factory · Pair · Router · Vault · Governance · Mining)
 │   └── scripts/                   # Deploy scripts (core + test tokens)
 │
 ├── backend/                       # Go 1.22+ · go-ethereum · GORM
@@ -216,7 +216,7 @@ cd frontend && npm install && npm run dev
 ### 5. Run Contract Tests
 
 ```bash
-cd contracts && npx hardhat test   # 39 passing
+cd contracts && npx hardhat test   # 106 passing
 ```
 
 ---
@@ -548,7 +548,7 @@ dex/
 │   │   ├── LiquidityMining.sol    # 多池 LP 质押奖励
 │   │   ├── libraries/DEXLibrary.sol
 │   │   └── interfaces/IWETH.sol
-│   ├── test/                      # 39 个单元测试（Factory · Pair · Router）
+│   ├── test/                      # 106 个单元测试（Factory · Pair · Router · Vault · Governance · Mining）
 │   └── scripts/                   # 部署脚本（核心 + 测试代币）
 │
 ├── backend/                       # Go 1.22+ · go-ethereum · GORM
@@ -617,7 +617,7 @@ cd frontend && npm install && npm run dev
 ### 5. 运行合约测试
 
 ```bash
-cd contracts && npx hardhat test   # 39 passing
+cd contracts && npx hardhat test   # 106 passing
 ```
 
 ---
