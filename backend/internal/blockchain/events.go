@@ -18,6 +18,7 @@ type EventHandler struct {
 	client              *Client
 	store               eventPairStore
 	orderStore          eventOrderStore
+	miningStore         eventMiningStore
 	pairTopic           common.Hash
 	mintTopic           common.Hash
 	burnTopic           common.Hash
@@ -26,7 +27,11 @@ type EventHandler struct {
 	orderCreatedTopic   common.Hash
 	orderFilledTopic    common.Hash
 	orderCancelledTopic common.Hash
+	depositTopic        common.Hash
+	withdrawTopic       common.Hash
+	harvestTopic        common.Hash
 	vaultAddr           common.Address
+	miningAddr          common.Address
 }
 
 type eventPairStore interface {
@@ -38,6 +43,12 @@ type eventOrderStore interface {
 	SaveOrder(order *store.LimitOrder) error
 	UpdateOrderStatus(id uint, status, filledTx string) error
 	GetOrder(id uint) (*store.LimitOrder, bool)
+}
+
+type eventMiningStore interface {
+	SavePoolStats(pid uint64, pair string, totalStaked string) error
+	SaveUserDeposit(pid uint64, user string, amount string) error
+	RemoveUserDeposit(pid uint64, user string) error
 }
 
 func NewEventHandler(client *Client, store eventPairStore) *EventHandler {
@@ -52,6 +63,9 @@ func NewEventHandler(client *Client, store eventPairStore) *EventHandler {
 		orderCreatedTopic:   crypto.Keccak256Hash([]byte("OrderCreated(uint256,address,address,address,uint256,uint256)")),
 		orderFilledTopic:    crypto.Keccak256Hash([]byte("OrderFilled(uint256,address,uint256)")),
 		orderCancelledTopic: crypto.Keccak256Hash([]byte("OrderCancelled(uint256)")),
+		depositTopic:        crypto.Keccak256Hash([]byte("Deposit(address,uint256,uint256)")),
+		withdrawTopic:       crypto.Keccak256Hash([]byte("Withdraw(address,uint256,uint256)")),
+		harvestTopic:        crypto.Keccak256Hash([]byte("Harvest(address,uint256,uint256)")),
 	}
 }
 
@@ -61,6 +75,14 @@ func (h *EventHandler) SetOrderStore(os eventOrderStore) {
 
 func (h *EventHandler) SetVaultAddr(addr common.Address) {
 	h.vaultAddr = addr
+}
+
+func (h *EventHandler) SetMiningStore(ms eventMiningStore) {
+	h.miningStore = ms
+}
+
+func (h *EventHandler) SetMiningAddr(addr common.Address) {
+	h.miningAddr = addr
 }
 
 func (h *EventHandler) WatchFactory(ctx context.Context) error {
@@ -329,4 +351,102 @@ func (h *EventHandler) handleOrderCancelled(vLog types.Log) {
 	}
 
 	log.Printf("order cancelled on chain: id=%d", id)
+}
+
+func (h *EventHandler) WatchMining(ctx context.Context) error {
+	if h.miningAddr == (common.Address{}) || h.miningStore == nil {
+		return fmt.Errorf("mining address or store not configured")
+	}
+
+	query := ethereum.FilterQuery{
+		Addresses: []common.Address{h.miningAddr},
+		Topics:    [][]common.Hash{{h.depositTopic, h.withdrawTopic, h.harvestTopic}},
+	}
+
+	logs := make(chan types.Log)
+	sub, err := h.client.ethClient.SubscribeFilterLogs(ctx, query, logs)
+	if err != nil {
+		return fmt.Errorf("subscribe mining events: %w", err)
+	}
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case err := <-sub.Err():
+				log.Printf("mining subscription error: %v", err)
+				return
+			case vLog := <-logs:
+				h.handleMiningEvent(vLog)
+			}
+		}
+	}()
+
+	log.Println("watching mining events for staking/harvest...")
+	return nil
+}
+
+func (h *EventHandler) handleMiningEvent(vLog types.Log) {
+	if len(vLog.Topics) == 0 {
+		return
+	}
+
+	topic := vLog.Topics[0]
+
+	switch topic {
+	case h.depositTopic:
+		h.handleDeposit(vLog)
+	case h.withdrawTopic:
+		h.handleWithdraw(vLog)
+	case h.harvestTopic:
+		h.handleHarvest(vLog)
+	}
+}
+
+func (h *EventHandler) handleDeposit(vLog types.Log) {
+	if len(vLog.Topics) < 3 || len(vLog.Data) < 32 {
+		return
+	}
+
+	user := common.BytesToAddress(vLog.Topics[1].Bytes())
+	pid := new(big.Int).SetBytes(vLog.Topics[2].Bytes()).Uint64()
+	amount := new(big.Int).SetBytes(vLog.Data[:32])
+
+	if h.miningStore != nil {
+		_ = h.miningStore.SaveUserDeposit(pid, user.Hex(), amount.String())
+	}
+
+	log.Printf("deposit on chain: user=%s pid=%d amount=%s", user.Hex(), pid, amount.String())
+}
+
+func (h *EventHandler) handleWithdraw(vLog types.Log) {
+	if len(vLog.Topics) < 3 || len(vLog.Data) < 32 {
+		return
+	}
+
+	user := common.BytesToAddress(vLog.Topics[1].Bytes())
+	pid := new(big.Int).SetBytes(vLog.Topics[2].Bytes()).Uint64()
+	amount := new(big.Int).SetBytes(vLog.Data[:32])
+
+	if h.miningStore != nil {
+		if amount.Sign() == 0 {
+			_ = h.miningStore.RemoveUserDeposit(pid, user.Hex())
+		} else {
+			_ = h.miningStore.SaveUserDeposit(pid, user.Hex(), amount.String())
+		}
+	}
+
+	log.Printf("withdraw on chain: user=%s pid=%d amount=%s", user.Hex(), pid, amount.String())
+}
+
+func (h *EventHandler) handleHarvest(vLog types.Log) {
+	if len(vLog.Topics) < 3 {
+		return
+	}
+
+	user := common.BytesToAddress(vLog.Topics[1].Bytes())
+	pid := new(big.Int).SetBytes(vLog.Topics[2].Bytes()).Uint64()
+
+	log.Printf("harvest on chain: user=%s pid=%d", user.Hex(), pid)
 }

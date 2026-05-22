@@ -56,7 +56,7 @@ This isn't a tutorial DEX. It's a **complete, vertically-integrated DeFi protoco
 | **Liquidity Mining** | Multi-pool Staking | Stake LP tokens, earn rewards proportional to pool weight |
 | **Real-time Data** | WebSocket Push | Order book depth updates broadcast to all connected clients |
 | | K-line / OHLCV | Historical candlestick data via REST API |
-| | On-chain Event Listener | Factory `PairCreated`, Pair `Swap/Mint/Burn/Sync` indexed in real-time |
+| | On-chain Event Listener | Factory `PairCreated`, Pair `Swap/Mint/Burn/Sync`, Vault `OrderCreated/Filled/Cancelled`, Mining `Deposit/Withdraw/Harvest` indexed in real-time |
 | **Infrastructure** | Multi-database | MySQL 8 / PostgreSQL / In-memory, switchable at runtime |
 | | Raw SQL Migrations | No ORM schema drift — explicit, versioned DDL scripts |
 | | Structured Logging | Dual output to stdout + `logs/backend.log` |
@@ -344,6 +344,7 @@ limit_orders          └── created_at       ├── for_votes / against_v
 | `LISTEN_ADDR` | `:8080` | API server bind address |
 | `FACTORY_ADDRESS` | — | Enables on-chain event listening |
 | `VAULT_ADDRESS` | — | Enables limit order event sync |
+| `FARM_ADDRESS` | — | Enables liquidity mining event sync |
 | `DATABASE_URL` | — | DB connection string (empty = in-memory) |
 | `DB_TYPE` | `auto` | `auto` / `mysql` / `postgres` |
 

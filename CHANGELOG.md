@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased]
+
+### 新增
+
+- **LiquidityMining 事件监听**：后端新增 `WatchMining`，监听 `Deposit/Withdraw/Harvest` 事件
+- **前端 Error Boundary**：`src/app/error.tsx` 实现全局错误恢复 UI
+- **前端 Loading 状态**：`src/app/loading.tsx` 实现全局加载动画
+- **环境变量示例**：`contracts/.env.example` 部署变量模板
+- **前端 .env.local** 完整化：新增 `NEXT_PUBLIC_LIMIT_ORDER/GOVERNANCE/FARM_ADDRESS` 等占位符
+
+### 修复
+
+- **合约测试 DEADLINE**：Router 测试 `DEADLINE` 从静态常量改为动态获取，解决测试时间戳过期问题
+
+---
+
 ## [0.4.0] - 2026-04-30
 
 ### 限价单订单簿实时展示
