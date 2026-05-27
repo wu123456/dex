@@ -12,13 +12,17 @@ type MemoryStore struct {
 	klines    map[string][]*Kline
 	orders    []*LimitOrder
 	proposals []*GovernanceProposal
+	pools     map[uint64]*PoolStats
+	deposits  map[uint64]map[string]*MiningDeposit
 }
 
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		pairs:  make(map[string]*Pair),
-		tokens: make(map[string]*Token),
-		klines: make(map[string][]*Kline),
+		pairs:    make(map[string]*Pair),
+		tokens:   make(map[string]*Token),
+		klines:   make(map[string][]*Kline),
+		pools:    make(map[uint64]*PoolStats),
+		deposits: make(map[uint64]map[string]*MiningDeposit),
 	}
 }
 
@@ -213,6 +217,32 @@ func (s *MemoryStore) UpdateProposal(proposal *GovernanceProposal) error {
 			s.proposals[i] = proposal
 			return nil
 		}
+	}
+	return nil
+}
+
+func (s *MemoryStore) SavePoolStats(pid uint64, pair string, totalStaked string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pools[pid] = &PoolStats{PID: pid, Pair: pair, TotalStaked: totalStaked}
+	return nil
+}
+
+func (s *MemoryStore) SaveUserDeposit(pid uint64, user string, amount string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.deposits[pid] == nil {
+		s.deposits[pid] = make(map[string]*MiningDeposit)
+	}
+	s.deposits[pid][user] = &MiningDeposit{PID: pid, User: user, Amount: amount}
+	return nil
+}
+
+func (s *MemoryStore) RemoveUserDeposit(pid uint64, user string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.deposits[pid] != nil {
+		delete(s.deposits[pid], user)
 	}
 	return nil
 }

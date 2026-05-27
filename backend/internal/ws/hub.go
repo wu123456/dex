@@ -27,6 +27,19 @@ type OrderBookUpdate struct {
 	Asks     []PriceLevel `json:"asks"`
 }
 
+type TradeUpdate struct {
+	Pair       string `json:"pair"`
+	Price      string `json:"price"`
+	Amount0In  string `json:"amount0In"`
+	Amount1In  string `json:"amount1In"`
+	Amount0Out string `json:"amount0Out"`
+	Amount1Out string `json:"amount1Out"`
+	To         string `json:"to"`
+	TxHash     string `json:"txHash"`
+	BlockNum   uint64 `json:"blockNum"`
+	Timestamp  int64  `json:"timestamp"`
+}
+
 type PriceLevel struct {
 	Price  string `json:"price"`
 	Amount string `json:"amount"`
@@ -79,6 +92,13 @@ func (h *Hub) BroadcastOrderBook(update *OrderBookUpdate) {
 	h.Broadcast(&Message{
 		Type: "orderbook",
 		Data: update,
+	})
+}
+
+func (h *Hub) BroadcastTrade(trade *TradeUpdate) {
+	h.Broadcast(&Message{
+		Type: "trade",
+		Data: trade,
 	})
 }
 

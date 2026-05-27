@@ -377,12 +377,14 @@ limit_orders          └── created_at       ├── for_votes / against_v
 
 ## 🗺 Roadmap
 
+- [x] WebSocket price push (swap events → live chart updates)
+- [x] Frontend order book real-time display
 - [ ] Cross-chain swaps (LayerZero / Axelar)
 - [ ] Contract security audit (Slither + manual review)
 - [ ] Concentrated liquidity (Uniswap V3-style tick system)
 - [ ] TWAP oracle integration
-- [ ] Mobile-responsive optimization
-- [ ] Dark/light theme toggle
+- [x] Mobile-responsive optimization
+- [x] Dark/light theme toggle
 
 ---
 
@@ -778,12 +780,14 @@ limit_orders          └── created_at       ├── for_votes / against_v
 
 ## 🗺 路线图
 
+- [x] WebSocket 实时价格推送（swap 事件 → 图表实时更新）
+- [x] 前端订单簿实时展示
 - [ ] 跨链交易（LayerZero / Axelar）
 - [ ] 合约安全审计（Slither + 人工审查）
 - [ ] 集中流动性（Uniswap V3 风格 tick 系统）
 - [ ] TWAP 预言机集成
-- [ ] 移动端适配优化
-- [ ] 深色/浅色主题切换
+- [x] 移动端适配优化
+- [x] 深色/浅色主题切换
 
 ---
 

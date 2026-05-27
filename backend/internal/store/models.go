@@ -89,6 +89,7 @@ type Store interface {
 	KlineStore
 	OrderStore
 	GovernanceStore
+	MiningStore
 }
 
 type PairStore interface {
@@ -127,6 +128,29 @@ type GovernanceStore interface {
 	ListProposals(status string) []*GovernanceProposal
 	UpdateProposal(proposal *GovernanceProposal) error
 }
+
+type MiningStore interface {
+	SavePoolStats(pid uint64, pair string, totalStaked string) error
+	SaveUserDeposit(pid uint64, user string, amount string) error
+	RemoveUserDeposit(pid uint64, user string) error
+}
+
+type PoolStats struct {
+	ID          uint   `gorm:"primaryKey" json:"id"`
+	PID         uint64 `gorm:"uniqueIndex;column:pid" json:"pid"`
+	Pair        string `gorm:"size:42;column:pair" json:"pair"`
+	TotalStaked string `gorm:"column:total_staked" json:"totalStaked"`
+}
+
+type MiningDeposit struct {
+	ID     uint   `gorm:"primaryKey" json:"id"`
+	PID    uint64 `gorm:"index;column:pid" json:"pid"`
+	User   string `gorm:"size:42;index;column:user" json:"user"`
+	Amount string `gorm:"column:amount" json:"amount"`
+}
+
+func (PoolStats) TableName() string     { return "pool_stats" }
+func (MiningDeposit) TableName() string { return "mining_deposits" }
 
 func BigToIntString(v *big.Int) string {
 	if v == nil {

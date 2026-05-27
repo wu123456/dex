@@ -4,15 +4,17 @@
 
 ### 新增
 
-- **LiquidityMining 事件监听**：后端新增 `WatchMining`，监听 `Deposit/Withdraw/Harvest` 事件
-- **前端 Error Boundary**：`src/app/error.tsx` 实现全局错误恢复 UI
-- **前端 Loading 状态**：`src/app/loading.tsx` 实现全局加载动画
-- **环境变量示例**：`contracts/.env.example` 部署变量模板
-- **前端 .env.local** 完整化：新增 `NEXT_PUBLIC_LIMIT_ORDER/GOVERNANCE/FARM_ADDRESS` 等占位符
+- **WebSocket 实时价格推送**：后端 `handleSwap` 在每次 swap 事件时广播 `TradeUpdate`（价格、金额、哈希、时间戳）
+- **useTradeUpdates Hook**：前端订阅 `trade` WS 消息，按交易对过滤
+- **SwapCard 实时价格显示**：显示最近一笔成交价格 + Live/Polling 状态指示灯
+- **PriceChart 实时更新**：WS 新交易来时自动更新 K 线（1 分钟 candle 聚合）+ LIVE 脉冲指示灯
+- **深色/浅色主题切换**：ThemeProvider + localStorage 持久化，Navbar 太阳/月亮图标切换
+- **移动端响应式**：Navbar 汉堡菜单、limit-order 双栏变单栏
 
-### 修复
+### 修改
 
-- **合约测试 DEADLINE**：Router 测试 `DEADLINE` 从静态常量改为动态获取，解决测试时间戳过期问题
+- **PriceChart**：新增 `useTradeUpdates` 集成，API URL 使用 `NEXT_PUBLIC_API_URL` 环境变量
+- **Navbar**：重构为带 hamburger 菜单的响应式顶部导航
 
 ---
 

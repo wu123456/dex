@@ -6,6 +6,7 @@ import { useState } from "react";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { DEX_ROUTER_ABI, DEX_ROUTER_ADDRESS, ERC20_ABI } from "@/lib/contracts";
 import { getTokensForChain } from "@/lib/tokens";
+import { useTradeUpdates } from "@/lib/useTradeUpdates";
 
 interface TokenData {
   address: `0x${string}`;
@@ -28,6 +29,11 @@ export function SwapCard() {
 
   const tokenIn = tokens[tokenInIdx] || null;
   const tokenOut = tokens[tokenOutIdx] || null;
+
+  const selectedPair = tokenIn && tokenOut
+    ? [tokenIn.address, tokenOut.address].sort().join("-")
+    : undefined;
+  const { lastTrade, connected } = useTradeUpdates(selectedPair);
 
   const path = tokenIn && tokenOut ? [tokenIn.address, tokenOut.address] as `0x${string}`[] : undefined;
   const parsedAmountIn = amountIn && tokenIn ? parseUnits(amountIn, tokenIn.decimals) : 0n;
@@ -99,8 +105,19 @@ export function SwapCard() {
   return (
     <div className="w-full max-w-md mx-auto bg-zinc-900 rounded-2xl border border-zinc-800 p-6">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-white">Swap</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-lg font-semibold text-white">Swap</h2>
+          <div className="flex items-center gap-1.5">
+            <div className={`w-2 h-2 rounded-full ${connected ? "bg-green-500" : "bg-zinc-600"}`} />
+            <span className="text-[10px] text-zinc-500">{connected ? "Live" : "Polling"}</span>
+          </div>
+        </div>
         <div className="flex items-center gap-2 text-xs text-zinc-400">
+          {lastTrade && (
+            <span className="text-zinc-500">
+              Last: <span className="text-green-400 font-mono">{parseFloat(lastTrade.price).toFixed(6)}</span>
+            </span>
+          )}
           <span>Slippage:</span>
           <input
             type="number"

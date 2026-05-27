@@ -10,8 +10,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-
 	"github.com/wolf/dex-backend/internal/store"
+	"github.com/wolf/dex-backend/internal/ws"
 )
 
 type EventHandler struct {
@@ -19,6 +19,7 @@ type EventHandler struct {
 	store               eventPairStore
 	orderStore          eventOrderStore
 	miningStore         eventMiningStore
+	hub                 *ws.Hub
 	pairTopic           common.Hash
 	mintTopic           common.Hash
 	burnTopic           common.Hash
@@ -83,6 +84,10 @@ func (h *EventHandler) SetMiningStore(ms eventMiningStore) {
 
 func (h *EventHandler) SetMiningAddr(addr common.Address) {
 	h.miningAddr = addr
+}
+
+func (h *EventHandler) SetHub(hub *ws.Hub) {
+	h.hub = hub
 }
 
 func (h *EventHandler) WatchFactory(ctx context.Context) error {
@@ -192,8 +197,54 @@ func (h *EventHandler) handlePairEvent(vLog types.Log) {
 		h.refreshReserves(pairAddr)
 	case h.swapTopic:
 		log.Printf("swap event on pair %s", pairAddr.Hex())
+		h.handleSwap(pairAddr, vLog)
 		h.refreshReserves(pairAddr)
 	}
+}
+
+func (h *EventHandler) handleSwap(pairAddr common.Address, vLog types.Log) {
+	if h.hub == nil {
+		return
+	}
+
+	if len(vLog.Topics) < 3 || len(vLog.Data) < 128 {
+		return
+	}
+
+	to := common.BytesToAddress(vLog.Topics[2].Bytes())
+
+	amount0In := new(big.Int).SetBytes(vLog.Data[0:32])
+	amount1In := new(big.Int).SetBytes(vLog.Data[32:64])
+	amount0Out := new(big.Int).SetBytes(vLog.Data[64:96])
+	amount1Out := new(big.Int).SetBytes(vLog.Data[96:128])
+
+	block, _ := h.client.ethClient.BlockByHash(context.Background(), vLog.BlockHash)
+	var timestamp int64
+	if block != nil {
+		timestamp = int64(block.Time())
+	}
+
+	var price string
+	if amount0In.Sign() > 0 && amount1Out.Sign() > 0 {
+		price = new(big.Rat).SetFrac(amount1Out, amount0In).FloatString(18)
+	} else if amount1In.Sign() > 0 && amount0Out.Sign() > 0 {
+		price = new(big.Rat).SetFrac(amount0Out, amount1In).FloatString(18)
+	} else {
+		price = "0"
+	}
+
+	h.hub.BroadcastTrade(&ws.TradeUpdate{
+		Pair:       pairAddr.Hex(),
+		Price:      price,
+		Amount0In:  amount0In.String(),
+		Amount1In:  amount1In.String(),
+		Amount0Out: amount0Out.String(),
+		Amount1Out: amount1Out.String(),
+		To:         to.Hex(),
+		TxHash:     vLog.TxHash.Hex(),
+		BlockNum:   vLog.BlockNumber,
+		Timestamp:  timestamp,
+	})
 }
 
 func (h *EventHandler) handleSync(pairAddr common.Address, vLog types.Log) {

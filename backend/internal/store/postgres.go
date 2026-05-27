@@ -162,3 +162,17 @@ func (s *PGStore) ListProposals(status string) []*GovernanceProposal {
 func (s *PGStore) UpdateProposal(proposal *GovernanceProposal) error {
 	return s.db.Save(proposal).Error
 }
+
+func (s *PGStore) SavePoolStats(pid uint64, pair string, totalStaked string) error {
+	stats := &PoolStats{PID: pid, Pair: pair, TotalStaked: totalStaked}
+	return s.db.Save(stats).Error
+}
+
+func (s *PGStore) SaveUserDeposit(pid uint64, user string, amount string) error {
+	deposit := &MiningDeposit{PID: pid, User: user, Amount: amount}
+	return s.db.Save(deposit).Error
+}
+
+func (s *PGStore) RemoveUserDeposit(pid uint64, user string) error {
+	return s.db.Where("pid = ? AND user = ?", pid, user).Delete(&MiningDeposit{}).Error
+}

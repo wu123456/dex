@@ -66,8 +66,12 @@ func main() {
 		log.Println("using in-memory storage")
 	}
 
+	hub := ws.NewHub()
+	go hub.Run()
+
 	if factoryAddr != "" {
 		eventHandler := blockchain.NewEventHandler(client, s)
+		eventHandler.SetHub(hub)
 		ctx := context.Background()
 		if err := eventHandler.WatchFactory(ctx); err != nil {
 			log.Printf("warning: could not start event watcher: %v", err)
@@ -81,10 +85,16 @@ func main() {
 				log.Printf("warning: could not start vault event watcher: %v", err)
 			}
 		}
-	}
 
-	hub := ws.NewHub()
-	go hub.Run()
+		farmAddrStr := getEnv("FARM_ADDRESS", "")
+		if farmAddrStr != "" {
+			eventHandler.SetMiningStore(s)
+			eventHandler.SetMiningAddr(common.HexToAddress(farmAddrStr))
+			if err := eventHandler.WatchMining(ctx); err != nil {
+				log.Printf("warning: could not start mining event watcher: %v", err)
+			}
+		}
+	}
 
 	svc := service.NewWithHub(client, s, hub)
 	handler := api.NewHandler(svc, hub)

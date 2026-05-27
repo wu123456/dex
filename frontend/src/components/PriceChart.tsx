@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTradeUpdates } from "@/lib/useTradeUpdates";
 
 interface KlinePoint {
   openTime: number;
@@ -14,13 +15,15 @@ interface KlinePoint {
 export function PriceChart({ pair }: { pair: string }) {
   const [klines, setKlines] = useState<KlinePoint[]>([]);
   const [loading, setLoading] = useState(false);
+  const { lastTrade, connected } = useTradeUpdates(pair);
 
   useEffect(() => {
     if (!pair) return;
     setLoading(true);
     const now = Math.floor(Date.now() / 1000);
     const from = now - 86400 * 7;
-    fetch(`/api/klines?pair=${pair}&from=${from}&to=${now}`)
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+    fetch(`${apiBase}/api/klines?pair=${pair}&from=${from}&to=${now}`)
       .then((r) => r.json())
       .then((data) => {
         setKlines(Array.isArray(data) ? data : []);
@@ -29,9 +32,54 @@ export function PriceChart({ pair }: { pair: string }) {
       .finally(() => setLoading(false));
   }, [pair]);
 
+  useEffect(() => {
+    if (!lastTrade || !pair || lastTrade.pair !== pair) return;
+    const price = parseFloat(lastTrade.price);
+    if (isNaN(price) || price === 0) return;
+
+    const now = Math.floor(Date.now() / 1000);
+    setKlines((prev) => {
+      if (prev.length === 0) {
+        return [{
+          openTime: lastTrade.timestamp || now,
+          open: lastTrade.price,
+          high: lastTrade.price,
+          low: lastTrade.price,
+          close: lastTrade.price,
+          volume: "0",
+        }];
+      }
+
+      const last = prev[prev.length - 1];
+      const lastTime = last.openTime;
+      const currentTime = lastTrade.timestamp || now;
+      const isSameCandle = currentTime - lastTime < 60;
+
+      if (isSameCandle) {
+        const updated = [...prev];
+        updated[updated.length - 1] = {
+          ...last,
+          high: Math.max(parseFloat(last.high), price).toFixed(18),
+          low: Math.min(parseFloat(last.low), price).toFixed(18),
+          close: lastTrade.price,
+        };
+        return updated;
+      } else {
+        return [...prev, {
+          openTime: currentTime,
+          open: lastTrade.price,
+          high: lastTrade.price,
+          low: lastTrade.price,
+          close: lastTrade.price,
+          volume: "0",
+        }];
+      }
+    });
+  }, [lastTrade, pair]);
+
   if (!pair) {
     return (
-      <div className="w-full max-w-lg mx-auto bg-zinc-900 rounded-2xl border border-zinc-800 p-6 text-center">
+      <div className="w-full max-w-lg mx-auto bg-zinc-900 dark:bg-zinc-900 rounded-2xl border border-zinc-800 dark:border-zinc-800 p-6 text-center">
         <p className="text-zinc-500">Select a pair to view chart</p>
       </div>
     );
@@ -39,7 +87,7 @@ export function PriceChart({ pair }: { pair: string }) {
 
   if (loading) {
     return (
-      <div className="w-full max-w-lg mx-auto bg-zinc-900 rounded-2xl border border-zinc-800 p-6 text-center">
+      <div className="w-full max-w-lg mx-auto bg-zinc-900 dark:bg-zinc-900 rounded-2xl border border-zinc-800 dark:border-zinc-800 p-6 text-center">
         <p className="text-zinc-500">Loading chart data...</p>
       </div>
     );
@@ -47,7 +95,7 @@ export function PriceChart({ pair }: { pair: string }) {
 
   if (klines.length === 0) {
     return (
-      <div className="w-full max-w-lg mx-auto bg-zinc-900 rounded-2xl border border-zinc-800 p-6">
+      <div className="w-full max-w-lg mx-auto bg-zinc-900 dark:bg-zinc-900 rounded-2xl border border-zinc-800 dark:border-zinc-800 p-6">
         <h3 className="text-sm font-medium text-white mb-4">Price Chart</h3>
         <div className="h-48 flex items-center justify-center text-zinc-600 text-sm">
           No historical data available yet. Swap events will populate this chart.
@@ -75,14 +123,20 @@ export function PriceChart({ pair }: { pair: string }) {
   const isUp = lastClose >= prevClose;
 
   return (
-    <div className="w-full max-w-lg mx-auto bg-zinc-900 rounded-2xl border border-zinc-800 p-6">
+    <div className="w-full max-w-lg mx-auto bg-zinc-900 dark:bg-zinc-900 rounded-2xl border border-zinc-800 dark:border-zinc-800 p-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-medium text-white">Price Chart</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-medium text-white">Price Chart</h3>
+          <div className="flex items-center gap-1.5">
+            <div className={`w-2 h-2 rounded-full ${connected ? "bg-green-500 animate-pulse" : "bg-zinc-600"}`} />
+            <span className="text-[10px] text-zinc-500">{connected ? "LIVE" : "OFFLINE"}</span>
+          </div>
+        </div>
         <span className={`text-sm font-medium ${isUp ? "text-green-400" : "text-red-400"}`}>
           {isUp ? "+" : ""}{change}%
         </span>
       </div>
-      <svg viewBox={`0 0 100 ${chartH}`} className="w-full" preserveAspectRatio="none">
+      <svg viewBox={`0 100 ${chartH}`} className="w-full" preserveAspectRatio="none">
         <polyline
           points={points}
           fill="none"
